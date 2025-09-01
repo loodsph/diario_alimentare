@@ -104,7 +104,7 @@ function setupListeners() {
 
     // Input di ricerca
     const foodSearchInput = document.getElementById('food-search');
-    foodSearchInput.addEventListener('input', handleSearch);
+    foodSearchInput.addEventListener('input', debounce(handleSearch, 300));
     foodSearchInput.addEventListener('focus', () => {
         document.getElementById('food-search-icon').classList.add('opacity-0');
     });
@@ -115,7 +115,7 @@ function setupListeners() {
     });
 
     const foodLookupInput = document.getElementById('food-lookup-search');
-    foodLookupInput.addEventListener('input', handleFoodLookup);
+    foodLookupInput.addEventListener('input', debounce(handleFoodLookup, 300));
     foodLookupInput.addEventListener('focus', () => {
         document.getElementById('food-lookup-search-icon').classList.add('opacity-0');
         // Ripristina l'espansione automatica della sezione quando si fa focus sull'input
@@ -699,6 +699,15 @@ function updateNutritionProgress() {
 
 
 // --- FUNZIONI UTILITY E HELPERS ---
+
+function debounce(func, delay) {
+    let timeout;
+    return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), delay);
+    };
+}
 
 function changeDay(offset) {
     if (offset === 0) { // Vai a oggi
