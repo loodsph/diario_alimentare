@@ -268,9 +268,22 @@ async function loadInitialData() {
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const allMealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
+        
         onSnapshot(allMealsQuery, (snapshot) => {
-            allMeals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
+            console.log(`Listener pasti: ricevuti ${snapshot.docs.length} documenti.`);
+            allMeals = snapshot.docs.map(doc => {
+                const data = doc.data();
+                if (!data.date || typeof data.date.toDate !== 'function') {
+                    console.warn(`Pasto con ID ${doc.id} ha una data non valida o mancante.`, data);
+                    return null; // Scarta questo dato non valido
+                }
+                return { id: doc.id, ...data, jsDate: data.date.toDate() };
+            }).filter(Boolean); // Rimuove tutti i pasti scartati (null)
+
             updateAllUI();
+        }, (error) => {
+            console.error("Errore nel listener dei pasti (onSnapshot):", error);
+            showToast("Errore nel caricare i pasti in tempo reale.", true);
         });
 
         // Carica ricette
@@ -551,18 +564,18 @@ function renderSelectedDayMeals() {
         if (meals.length > 0) {
             mealsHTML = meals.map(meal => {
                 const calculated = {
-                    calories: ((meal.calories || 0) * (meal.quantity || 0) / 100),
-                    proteins: ((meal.proteins || 0) * (meal.quantity || 0) / 100),
-                    carbs: ((meal.carbs || 0) * (meal.quantity || 0) / 100),
-                    fats: ((meal.fats || 0) * (meal.quantity || 0) / 100),
-                    fibers: ((meal.fibers || 0) * (meal.quantity || 0) / 100)
+                    calories: ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100),
+                    proteins: ((Number(meal.proteins) || 0) * (Number(meal.quantity) || 0) / 100),
+                    carbs: ((Number(meal.carbs) || 0) * (Number(meal.quantity) || 0) / 100),
+                    fats: ((Number(meal.fats) || 0) * (Number(meal.quantity) || 0) / 100),
+                    fibers: ((Number(meal.fibers) || 0) * (Number(meal.quantity) || 0) / 100)
                 };
                 Object.keys(categoryTotals).forEach(key => categoryTotals[key] += calculated[key]);
                 return `
                 <div class="meal-item">
                     <div class="flex justify-between items-center">
                         <div>
-                            <p class="font-medium text-slate-200">${meal.name} (${meal.quantity || 0}g)</p>
+                            <p class="font-medium text-slate-200">${meal.name} (${Number(meal.quantity) || 0}g)</p>
                             <p class="text-sm text-slate-400 mt-1">
                                 Cal: ${calculated.calories.toFixed(0)} | P: ${calculated.proteins.toFixed(1)}g | C: ${calculated.carbs.toFixed(1)}g | G: ${calculated.fats.toFixed(1)}g
                             </p>
@@ -631,12 +644,12 @@ function renderWeeklyHistory() {
         const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
         
         const totals = dayMeals.reduce((acc, meal) => {
-            const ratio = (meal.quantity || 0) / 100;
-            acc.calories += (meal.calories || 0) * ratio;
-            acc.proteins += (meal.proteins || 0) * ratio;
-            acc.carbs += (meal.carbs || 0) * ratio;
-            acc.fats += (meal.fats || 0) * ratio;
-            acc.fibers += (meal.fibers || 0) * ratio;
+            const ratio = (Number(meal.quantity) || 0) / 100;
+            acc.calories += (Number(meal.calories) || 0) * ratio;
+            acc.proteins += (Number(meal.proteins) || 0) * ratio;
+            acc.carbs += (Number(meal.carbs) || 0) * ratio;
+            acc.fats += (Number(meal.fats) || 0) * ratio;
+            acc.fibers += (Number(meal.fibers) || 0) * ratio;
             return acc;
         }, { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 });
 
@@ -664,12 +677,12 @@ function updateNutritionProgress() {
     const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
     
     const totals = dayMeals.reduce((acc, meal) => {
-        const ratio = (meal.quantity || 0) / 100;
-        acc.calories += (meal.calories || 0) * ratio;
-        acc.proteins += (meal.proteins || 0) * ratio;
-        acc.carbs += (meal.carbs || 0) * ratio;
-        acc.fats += (meal.fats || 0) * ratio;
-        acc.fibers += (meal.fibers || 0) * ratio;
+        const ratio = (Number(meal.quantity) || 0) / 100;
+        acc.calories += (Number(meal.calories) || 0) * ratio;
+        acc.proteins += (Number(meal.proteins) || 0) * ratio;
+        acc.carbs += (Number(meal.carbs) || 0) * ratio;
+        acc.fats += (Number(meal.fats) || 0) * ratio;
+        acc.fibers += (Number(meal.fibers) || 0) * ratio;
         return acc;
     }, { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 });
     
@@ -916,7 +929,7 @@ function updateCharts() {
         const { start, end } = getDayBounds(date);
         const dayCalories = allMeals
             .filter(meal => meal.jsDate >= start && meal.jsDate <= end)
-            .reduce((sum, meal) => sum + ((meal.calories || 0) * (meal.quantity || 0) / 100), 0);
+            .reduce((sum, meal) => sum + ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100), 0);
         calorieLabels.push(date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }));
         calorieData.push(dayCalories.toFixed(0));
     }
@@ -929,10 +942,10 @@ function updateCharts() {
     const dayTotals = allMeals
         .filter(meal => meal.jsDate >= start && meal.jsDate <= end)
         .reduce((acc, meal) => {
-            const ratio = (meal.quantity || 0) / 100;
-            acc.proteins += (meal.proteins || 0) * ratio;
-            acc.carbs += (meal.carbs || 0) * ratio;
-            acc.fats += (meal.fats || 0) * ratio;
+            const ratio = (Number(meal.quantity) || 0) / 100;
+            acc.proteins += (Number(meal.proteins) || 0) * ratio;
+            acc.carbs += (Number(meal.carbs) || 0) * ratio;
+            acc.fats += (Number(meal.fats) || 0) * ratio;
             return acc;
         }, { proteins: 0, carbs: 0, fats: 0 });
     
