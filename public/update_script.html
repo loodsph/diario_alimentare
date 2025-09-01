@@ -1,0 +1,615 @@
+// Importa le funzioni necessarie da Firebase SDK
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// Configurazione Firebase dal tuo progetto
+const firebaseConfig = {
+  apiKey: "AIzaSyCCwhGg3hSQauEXmA1YKMgH60JQk9VNvXA",
+  authDomain: "diario-alimentare-4f07f.firebaseapp.com",
+  projectId: "diario-alimentare-4f07f",
+  storageBucket: "diario-alimentare-4f07f.appspot.com",
+  messagingSenderId: "904900489529",
+  appId: "1:904900489529:web:bb8d121f2a9a206c1538e8",
+  measurementId: "G-JYDET1ZW5K"
+};
+
+let app, auth, db;
+let userId = null;
+let selectedFood = null;
+let selectedDate = new Date(); // Data selezionata attualmente
+let allMeals = []; // Cache di tutti i pasti
+let recipes = []; // Cache delle ricette
+let calorieChart = null;
+let macroChart = null;
+let isOnline = navigator.onLine;
+let onDecodeCallback = null; // Funzione da chiamare dopo la scansione
+
+// Obiettivi nutrizionali di default
+let nutritionGoals = {
+    calories: 2000,
+    proteins: 150,
+    carbs: 250,
+    fats: 70,
+    fibers: 30
+};
+
+// Gestione stato offline/online
+window.addEventListener('online', () => {
+    isOnline = true;
+    document.getElementById('offline-indicator').classList.remove('show');
+    showToast('Sei di nuovo online!', false);
+});
+
+window.addEventListener('offline', () => {
+    isOnline = false;
+    document.getElementById('offline-indicator').classList.add('show');
+    showToast('Sei offline. Alcune funzionalità potrebbero non essere disponibili.', true);
+});
+
+// Service Worker per PWA
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('data:text/javascript;base64,' + btoa(`
+            const CACHE_NAME = 'diario-alimentare-v1';
+            const urlsToCache = [
+                '/',
+                'https://cdn.tailwindcss.com',
+                'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
+                'https://cdn.jsdelivr.net/npm/chart.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js'
+            ];
+            
+            self.addEventListener('install', event => {
+                event.waitUntil(
+                    caches.open(CACHE_NAME)
+                        .then(cache => cache.addAll(urlsToCache))
+                );
+            });
+            
+            self.addEventListener('fetch', event => {
+                event.respondWith(
+                    caches.match(event.request)
+                        .then(response => {
+                            return response || fetch(event.request);
+                        })
+                );
+            });
+        `))
+        .then(registration => {
+            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        })
+        .catch(error => {
+            console.log('ServiceWorker registration failed: ', error);
+        });
+    });
+}
+
+// Funzione per mostrare notifiche
+function showToast(message, isError = false) {
+    const toast = document.getElementById('toast');
+    toast.querySelector('span').textContent = message;
+    
+    const icon = toast.querySelector('i');
+    if (isError) {
+        icon.className = 'fas fa-exclamation-circle mr-3 text-xl';
+        toast.classList.remove('bg-green-500');
+        toast.classList.add('bg-red-500');
+    } else {
+        icon.className = 'fas fa-check-circle mr-3 text-xl';
+        toast.classList.remove('bg-red-500');
+        toast.classList.add('bg-green-500');
+    }
+    
+    toast.classList.remove('opacity-0', 'translate-y-10');
+    
+    setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-10');
+    }, 3000);
+}
+
+// Funzione di debounce per limitare le chiamate API durante la digitazione
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// ... (tutte le altre funzioni rimangono invariate: formatDate, getDayBounds, ecc.)
+function formatDate(date) {
+    return date.toLocaleDateString('it-IT', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+}
+function getDayBounds(date) {
+    const start = new Date(date);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(date);
+    end.setHours(23, 59, 59, 999);
+    return { start, end };
+}
+function updateDateDisplay() {
+    const displayElement = document.getElementById('current-date-display');
+    const infoElement = document.getElementById('day-info');
+    const datePickerElement = document.getElementById('date-picker');
+    
+    displayElement.textContent = formatDate(selectedDate);
+    
+    const today = new Date();
+    const diffTime = selectedDate.getTime() - today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+        infoElement.textContent = "📅 Oggi";
+    } else if (diffDays === 1) {
+        infoElement.textContent = "⏭️ Domani";
+    } else if (diffDays === -1) {
+        infoElement.textContent = "⏮️ Ieri";
+    } else if (diffDays > 0) {
+        infoElement.textContent = `📆 Fra ${diffDays} giorni`;
+    } else {
+        infoElement.textContent = `📆 ${Math.abs(diffDays)} giorni fa`;
+    }
+    
+    datePickerElement.value = selectedDate.toISOString().split('T')[0];
+}
+async function loadNutritionGoals() {
+    if (!userId || !isOnline) return;
+    try {
+        const goalsDoc = doc(db, `users/${userId}/goals/nutrition`);
+        const docSnap = await getDoc(goalsDoc);
+        if (docSnap.exists()) {
+            nutritionGoals = docSnap.data();
+        } else {
+            await setDoc(goalsDoc, nutritionGoals);
+        }
+        document.getElementById('goal-calories').value = nutritionGoals.calories;
+        document.getElementById('goal-proteins').value = nutritionGoals.proteins;
+        document.getElementById('goal-carbs').value = nutritionGoals.carbs;
+        document.getElementById('goal-fats').value = nutritionGoals.fats;
+        document.getElementById('goal-fibers').value = nutritionGoals.fibers;
+    } catch (error) {
+        console.error("Errore nel caricare gli obiettivi nutrizionali:", error);
+        const savedGoals = localStorage.getItem('nutritionGoals');
+        if (savedGoals) {
+            nutritionGoals = JSON.parse(savedGoals);
+        }
+    }
+}
+async function saveNutritionGoals() {
+    if (!userId || !isOnline) return;
+    try {
+        const goalsDoc = doc(db, `users/${userId}/goals/nutrition`);
+        await setDoc(goalsDoc, nutritionGoals);
+        localStorage.setItem('nutritionGoals', JSON.stringify(nutritionGoals));
+    } catch (error) {
+        console.error("Errore nel salvare gli obiettivi nutrizionali:", error);
+        showToast("Errore nel salvare gli obiettivi. Verranno salvati localmente.", true);
+        localStorage.setItem('nutritionGoals', JSON.stringify(nutritionGoals));
+    }
+}
+async function loadInitialData() {
+    try {
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const allMealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
+        onSnapshot(allMealsQuery, (snapshot) => {
+            allMeals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
+            renderSelectedDayMeals();
+            renderWeeklyHistory();
+            updateCharts();
+        });
+        const recipesCollection = collection(db, `users/${userId}/recipes`);
+        onSnapshot(recipesCollection, (snapshot) => {
+            recipes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            renderRecipes();
+        });
+    } catch (error) {
+        console.error("Errore nel caricare i dati iniziali:", error);
+        showToast("Errore nel caricare i dati. Alcune funzionalità potrebbero non essere disponibili.", true);
+    }
+}
+function initCharts() {
+    const calorieCtx = document.getElementById('calorie-chart').getContext('2d');
+    calorieChart = new Chart(calorieCtx, { type: 'line', data: { labels: [], datasets: [{ label: 'Calorie', data: [], borderColor: 'rgb(102, 126, 234)', backgroundColor: 'rgba(102, 126, 234, 0.1)', tension: 0.4, fill: true, pointBackgroundColor: 'rgb(102, 126, 234)', pointBorderColor: '#fff', pointBorderWidth: 2, pointRadius: 5, pointHoverRadius: 7 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: 'rgba(0, 0, 0, 0.05)' } }, x: { grid: { display: false } } } } });
+    const macroCtx = document.getElementById('macro-chart').getContext('2d');
+    macroChart = new Chart(macroCtx, { type: 'doughnut', data: { labels: ['Proteine', 'Carboidrati', 'Grassi'], datasets: [{ data: [0, 0, 0], backgroundColor: ['rgba(17, 153, 142, 0.8)', 'rgba(242, 153, 74, 0.8)', 'rgba(235, 51, 73, 0.8)'], borderColor: ['rgba(17, 153, 142, 1)', 'rgba(242, 153, 74, 1)', 'rgba(235, 51, 73, 1)'], borderWidth: 2, hoverOffset: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { padding: 20, font: { size: 14 } } } }, cutout: '70%' } });
+}
+
+// Gestione Autenticazione
+window.onload = () => {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+
+    setupListeners(); // Imposta subito i listener per login/logout
+
+    onAuthStateChanged(auth, async (user) => {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loginScreen = document.getElementById('login-screen');
+        const appContainer = document.getElementById('app');
+
+        if (user) {
+            // L'utente è loggato
+            userId = user.uid;
+            loginScreen.classList.add('hidden');
+            loadingOverlay.classList.remove('hidden');
+
+            updateUserUI(user);
+
+            await loadNutritionGoals();
+            await loadInitialData();
+            
+            updateDateDisplay();
+            if (!calorieChart) { // Inizializza i grafici solo una volta
+                initCharts();
+            } else {
+                updateCharts();
+            }
+            ['recipes-section', 'history-section', 'food-section', 'food-lookup-section'].forEach(id => {
+                document.getElementById(id).classList.add('collapsed');
+            });
+
+            appContainer.classList.remove('hidden');
+            loadingOverlay.classList.add('hidden');
+        } else {
+            // L'utente non è loggato
+            userId = null;
+            updateUserUI(null);
+            appContainer.classList.add('hidden');
+            loginScreen.classList.remove('hidden');
+            loadingOverlay.classList.add('hidden');
+            resetAppData();
+        }
+    });
+};
+// NUOVE FUNZIONI SCANNER (SOLO FILE UPLOAD)
+function startScanner(onDecode) {
+    if (typeof Html5Qrcode === 'undefined') {
+        showToast("Libreria di scansione non caricata.", true);
+        return;
+    }
+    onDecodeCallback = onDecode;
+    document.getElementById('barcode-file-input').click();
+}
+async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const modal = document.getElementById('scanner-modal');
+    modal.querySelector('#scanner-title').textContent = "Elaborazione...";
+    modal.querySelector('#scanner-feedback').textContent = "Analisi dell'immagine in corso...";
+    modal.classList.remove('hidden');
+    const html5QrCode = new Html5Qrcode("scanner-container");
+    try {
+        const decodedText = await html5QrCode.scanFile(file, false);
+        showToast(`Codice trovato!`);
+        if (onDecodeCallback) {
+            onDecodeCallback(decodedText);
+        }
+    } catch (err) {
+        console.error("Errore nella scansione del file:", err);
+        showToast("Nessun codice a barre trovato nell'immagine.", true);
+    } finally {
+        modal.classList.add('hidden');
+        onDecodeCallback = null;
+        event.target.value = ''; // Permette di ricaricare lo stesso file
+    }
+}
+
+function stopScanner() {
+    // Non è più necessario gestire uno stream video, basta nascondere il modale
+    document.getElementById('scanner-modal').classList.add('hidden');
+}
+function setupListeners() {
+    // ... (altri listeners)
+    document.getElementById('prev-day').addEventListener('click', () => { selectedDate.setDate(selectedDate.getDate() - 1); updateDateDisplay(); renderSelectedDayMeals(); updateCharts(); });
+    document.getElementById('next-day').addEventListener('click', () => { selectedDate.setDate(selectedDate.getDate() + 1); updateDateDisplay(); renderSelectedDayMeals(); updateCharts(); });
+    document.getElementById('today-btn').addEventListener('click', () => { selectedDate = new Date(); updateDateDisplay(); renderSelectedDayMeals(); updateCharts(); });
+    document.getElementById('date-picker').addEventListener('change', (e) => { const [year, month, day] = e.target.value.split('-').map(Number); selectedDate = new Date(year, month - 1, day); updateDateDisplay(); renderSelectedDayMeals(); updateCharts(); });
+    document.getElementById('edit-goals-btn').addEventListener('click', () => { document.getElementById('goals-modal').classList.remove('hidden'); document.getElementById('goal-calories').focus(); });
+    document.getElementById('cancel-goals-btn').addEventListener('click', () => { document.getElementById('goals-modal').classList.add('hidden'); loadNutritionGoals(); });
+    document.getElementById('save-goals-btn').addEventListener('click', async () => { nutritionGoals.calories = parseInt(document.getElementById('goal-calories').value) || 2000; nutritionGoals.proteins = parseInt(document.getElementById('goal-proteins').value) || 150; nutritionGoals.carbs = parseInt(document.getElementById('goal-carbs').value) || 250; nutritionGoals.fats = parseInt(document.getElementById('goal-fats').value) || 70; nutritionGoals.fibers = parseInt(document.getElementById('goal-fibers').value) || 30; await saveNutritionGoals(); updateNutritionProgress(); document.getElementById('goals-modal').classList.add('hidden'); showToast('Obiettivi aggiornati con successo!'); });
+    document.getElementById('add-ingredient-btn').addEventListener('click', () => { const container = document.getElementById('recipe-ingredients'); const newIngredient = document.createElement('div'); newIngredient.className = 'flex space-x-3'; newIngredient.innerHTML = `<input type="text" class="recipe-ingredient-name flex-1 form-input" placeholder="Ingrediente" aria-label="Nome ingrediente"><input type="number" class="recipe-ingredient-quantity w-24 form-input" placeholder="g" aria-label="Quantità ingrediente"><button type="button" class="delete-btn text-red-500 hover:text-red-700" aria-label="Rimuovi ingrediente"><i class="fas fa-trash-alt" aria-hidden="true"></i></button></button>`; container.appendChild(newIngredient); newIngredient.querySelector('.recipe-ingredient-name').focus(); });
+    // Listener per login/logout
+    document.getElementById('login-btn').addEventListener('click', signInWithGoogle);
+    document.getElementById('logout-btn').addEventListener('click', logout);
+
+    document.getElementById('recipe-ingredients').addEventListener('click', (e) => { if (e.target.closest('.delete-btn')) e.target.closest('.flex').remove(); });
+    document.getElementById('save-recipe-btn').addEventListener('click', saveRecipe);
+    document.querySelectorAll('.section-header').forEach(header => { header.addEventListener('click', () => { const isExpanded = header.getAttribute('aria-expanded') === 'true'; header.setAttribute('aria-expanded', !isExpanded); header.parentElement.classList.toggle('collapsed'); }); header.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); header.click(); } }); });
+    
+    // Listeners per lo scanner
+    document.getElementById('scan-barcode-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateMealForm)));
+    document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm)));
+    document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
+    document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect); // NUOVO LISTENER
+
+    const debouncedSearch = debounce(handleSearch, 300);
+    const debouncedLookup = debounce(handleFoodLookup, 300);
+
+    // Altri listeners
+    document.getElementById('add-food-btn').addEventListener('click', addNewFood);
+    document.getElementById('food-search').addEventListener('input', debouncedSearch);
+    document.getElementById('add-meal-btn').addEventListener('click', addMeal);
+    document.getElementById('food-lookup-search').addEventListener('input', debouncedLookup);
+    const foodSearchInput = document.getElementById('food-search'); const foodSearchIcon = document.getElementById('food-search-icon'); foodSearchInput.addEventListener('focus', () => foodSearchIcon.classList.add('opacity-0')); foodSearchInput.addEventListener('blur', () => { if (foodSearchInput.value === '') foodSearchIcon.classList.remove('opacity-0'); });
+    const foodLookupInput = document.getElementById('food-lookup-search'); const foodLookupIcon = document.getElementById('food-lookup-search-icon'); foodLookupInput.addEventListener('focus', () => { foodLookupIcon.classList.add('opacity-0'); const section = document.getElementById('food-lookup-section'); if (section.classList.contains('collapsed')) section.querySelector('.section-header').click(); }); foodLookupInput.addEventListener('blur', () => { if (foodLookupInput.value === '') foodLookupIcon.classList.remove('opacity-0'); });
+}
+
+function signInWithGoogle() {
+    const provider = new GoogleAuthProvider();
+    signInWithPopup(auth, provider)
+        .then((result) => {
+            showToast(`Benvenuto, ${result.user.displayName}!`);
+        }).catch((error) => {
+            console.error("Errore di autenticazione Google:", error);
+            showToast(`Errore di autenticazione: ${error.message}`, true);
+        });
+}
+
+function logout() {
+    signOut(auth).then(() => {
+        showToast('Sei stato disconnesso.');
+    }).catch((error) => {
+        console.error("Errore durante il logout:", error);
+        showToast('Errore durante il logout.', true);
+    });
+}
+
+function updateUserUI(user) {
+    const topBar = document.getElementById('top-bar');
+    if (user) {
+        document.getElementById('user-photo').src = user.photoURL || 'https://via.placeholder.com/150';
+        document.getElementById('user-photo').alt = `Foto profilo di ${user.displayName}`;
+        document.getElementById('user-name').textContent = user.displayName || 'Utente';
+        document.getElementById('user-email').textContent = user.email;
+        topBar.classList.remove('hidden');
+        topBar.classList.add('flex');
+    } else {
+        topBar.classList.add('hidden');
+        topBar.classList.remove('flex');
+    }
+}
+
+function resetAppData() {
+    allMeals = []; recipes = [];
+    if (calorieChart) { calorieChart.destroy(); calorieChart = null; }
+    if (macroChart) { macroChart.destroy(); macroChart = null; }
+    document.getElementById('selected-day-meals').innerHTML = ''; document.getElementById('saved-recipes').innerHTML = ''; document.getElementById('weekly-history').innerHTML = '';
+}
+
+// ... (tutte le altre funzioni rimangono invariate: renderSelectedDayMeals, updateNutritionProgress, ecc.)
+function renderSelectedDayMeals() {
+    const container = document.getElementById('selected-day-meals');
+    const { start, end } = getDayBounds(selectedDate);
+    const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
+    container.innerHTML = '';
+    const totals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+    const mealCategories = [{ id: 'breakfast', name: '🌅 Colazione', type: '🌅 Colazione' }, { id: 'lunch', name: '🍽️ Pranzo', type: '🍽️ Pranzo' }, { id: 'dinner', name: '🌙 Cena', type: '🌙 Cena' }, { id: 'snack', name: '🍪 Spuntino', type: '🍪 Spuntino' }];
+    mealCategories.forEach(category => { const categoryContainer = document.createElement('div'); categoryContainer.className = 'meal-category mb-6'; categoryContainer.innerHTML = `<div class="meal-category-header"><h3 class="text-lg font-semibold text-gray-100">${category.name}</h3><div class="text-sm font-medium text-gray-400" id="${category.id}-totals"></div></div><div id="${category.id}-meals" class="p-4 space-y-3"></div>`; container.appendChild(categoryContainer); });
+    const mealsByCategory = { '🌅 Colazione': [], '🍽️ Pranzo': [], '🌙 Cena': [], '🍪 Spuntino': [] };
+    dayMeals.forEach(meal => mealsByCategory[meal.type].push(meal));
+    mealCategories.forEach(category => {
+        const categoryMeals = mealsByCategory[category.type];
+        const mealsContainer = document.getElementById(`${category.id}-meals`);
+        const totalsContainer = document.getElementById(`${category.id}-totals`);
+        let categoryTotals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+        if (categoryMeals.length === 0) {
+            mealsContainer.innerHTML = '<div class="text-gray-500 italic py-2 text-center">Nessun pasto registrato</div>';
+        } else {
+            categoryMeals.forEach(meal => {
+                const mealElement = document.createElement('div');
+                mealElement.className = 'meal-item p-4';
+                const cals = (meal.calories * meal.quantity / 100).toFixed(1);
+                mealElement.innerHTML = `<div class="flex justify-between items-center"><div><p class="font-medium text-gray-100">${meal.name} (${meal.quantity}g)</p><p class="text-sm text-gray-400 mt-1">Cal: ${cals} | P: ${(meal.proteins * meal.quantity / 100).toFixed(1)}g | C: ${(meal.carbs * meal.quantity / 100).toFixed(1)}g | Fi: ${((meal.fibers || 0) * meal.quantity / 100).toFixed(1)}g | G: ${(meal.fats * meal.quantity / 100).toFixed(1)}g</p><p class="text-xs text-gray-500 mt-1">${meal.jsDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}</p></div><button onclick="deleteMeal('${meal.id}')" class="delete-btn text-red-500 hover:text-red-700 p-2" aria-label="Elimina pasto"><i class="fas fa-trash-alt" aria-hidden="true"></i></button></div>`;
+                mealsContainer.appendChild(mealElement);
+                categoryTotals.calories += meal.calories * meal.quantity / 100; categoryTotals.proteins += meal.proteins * meal.quantity / 100; categoryTotals.carbs += meal.carbs * meal.quantity / 100; categoryTotals.fats += meal.fats * meal.quantity / 100; categoryTotals.fibers += (meal.fibers || 0) * meal.quantity / 100;
+            });
+        }
+        totalsContainer.innerHTML = `Cal: ${Math.round(categoryTotals.calories)} | P: ${categoryTotals.proteins.toFixed(1)}g | C: ${categoryTotals.carbs.toFixed(1)}g | Fi: ${categoryTotals.fibers.toFixed(1)}g | G: ${categoryTotals.fats.toFixed(1)}g`;
+        totals.calories += categoryTotals.calories; totals.proteins += categoryTotals.proteins; totals.carbs += categoryTotals.carbs; totals.fats += categoryTotals.fats; totals.fibers += categoryTotals.fibers;
+    });
+    document.getElementById('total-calories').textContent = Math.round(totals.calories); document.getElementById('total-proteins').textContent = totals.proteins.toFixed(1); document.getElementById('total-carbs').textContent = totals.carbs.toFixed(1); document.getElementById('total-fats').textContent = totals.fats.toFixed(1); document.getElementById('total-fibers').textContent = totals.fibers.toFixed(1);
+    updateNutritionProgress();
+}
+function updateNutritionProgress() {
+    const { start, end } = getDayBounds(selectedDate);
+    const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
+    const totals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+    dayMeals.forEach(meal => { totals.calories += meal.calories * meal.quantity / 100; totals.proteins += meal.proteins * meal.quantity / 100; totals.carbs += meal.carbs * meal.quantity / 100; totals.fats += meal.fats * meal.quantity / 100; totals.fibers += (meal.fibers || 0) * meal.quantity / 100; });
+    const caloriePercent = Math.min(100, (totals.calories / nutritionGoals.calories) * 100); const proteinPercent = Math.min(100, (totals.proteins / nutritionGoals.proteins) * 100); const carbPercent = Math.min(100, (totals.carbs / nutritionGoals.carbs) * 100); const fatPercent = Math.min(100, (totals.fats / nutritionGoals.fats) * 100); const fiberPercent = Math.min(100, (totals.fibers / nutritionGoals.fibers) * 100);
+    document.getElementById('calorie-progress').style.width = `${caloriePercent}%`; document.getElementById('protein-progress').style.width = `${proteinPercent}%`; document.getElementById('carb-progress').style.width = `${carbPercent}%`; document.getElementById('fat-progress').style.width = `${fatPercent}%`; document.getElementById('fiber-progress').style.width = `${fiberPercent}%`;
+    document.querySelector('#calorie-progress').parentElement.setAttribute('aria-valuenow', Math.round(caloriePercent)); document.querySelector('#protein-progress').parentElement.setAttribute('aria-valuenow', Math.round(proteinPercent)); document.querySelector('#carb-progress').parentElement.setAttribute('aria-valuenow', Math.round(carbPercent)); document.querySelector('#fat-progress').parentElement.setAttribute('aria-valuenow', Math.round(fatPercent)); document.querySelector('#fiber-progress').parentElement.setAttribute('aria-valuenow', Math.round(fiberPercent));
+    document.getElementById('calorie-progress-text').textContent = `${Math.round(totals.calories)}/${nutritionGoals.calories}`; document.getElementById('protein-progress-text').textContent = `${totals.proteins.toFixed(1)}g/${nutritionGoals.proteins}g`; document.getElementById('carb-progress-text').textContent = `${totals.carbs.toFixed(1)}g/${nutritionGoals.carbs}g`; document.getElementById('fat-progress-text').textContent = `${totals.fats.toFixed(1)}g/${nutritionGoals.fats}g`; document.getElementById('fiber-progress-text').textContent = `${totals.fibers.toFixed(1)}g/${nutritionGoals.fibers}g`;
+}
+function renderWeeklyHistory() {
+    const container = document.getElementById('weekly-history');
+    container.innerHTML = '';
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const { start, end } = getDayBounds(date);
+        const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
+        const totals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+        dayMeals.forEach(meal => { totals.calories += meal.calories * meal.quantity / 100; totals.proteins += meal.proteins * meal.quantity / 100; totals.carbs += meal.carbs * meal.quantity / 100; totals.fats += meal.fats * meal.quantity / 100; totals.fibers += (meal.fibers || 0) * meal.quantity / 100; });
+        const row = document.createElement('tr');
+        row.className = 'table-row';
+        row.setAttribute('tabindex', '0');
+        row.onclick = () => { selectedDate = new Date(date); updateDateDisplay(); renderSelectedDayMeals(); updateCharts(); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+        row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); row.click(); } });
+        const isToday = date.toDateString() === new Date().toDateString();
+        const dateClass = isToday ? 'font-bold text-purple-600' : '';
+        row.innerHTML = `<td class="px-6 py-4 whitespace-nowrap text-sm ${dateClass}">${date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })} ${isToday ? '(Oggi)' : ''}</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-100">${Math.round(totals.calories)}</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-100">${totals.proteins.toFixed(1)}g</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-100">${totals.carbs.toFixed(1)}g</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-100">${totals.fats.toFixed(1)}g</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-100">${totals.fibers.toFixed(1)}g</td><td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${dayMeals.length} pasti</td>`;
+        container.appendChild(row);
+    }
+}
+function updateCharts() {
+    const labels = []; const data = [];
+    for (let i = 6; i >= 0; i--) {
+        const date = new Date(); date.setDate(date.getDate() - i);
+        const { start, end } = getDayBounds(date);
+        const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
+        let calories = 0;
+        dayMeals.forEach(meal => { calories += meal.calories * meal.quantity / 100; });
+        labels.push(date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' }));
+        data.push(Math.round(calories));
+    }
+    calorieChart.data.labels = labels; calorieChart.data.datasets[0].data = data; calorieChart.update();
+    const { start, end } = getDayBounds(selectedDate);
+    const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
+    let proteins = 0, carbs = 0, fats = 0;
+    dayMeals.forEach(meal => { proteins += meal.proteins * meal.quantity / 100; carbs += meal.carbs * meal.quantity / 100; fats += meal.fats * meal.quantity / 100; });
+    macroChart.data.datasets[0].data = [Math.round(proteins * 4), Math.round(carbs * 4), Math.round(fats * 9)];
+    macroChart.update();
+}
+function renderRecipes() {
+    const container = document.getElementById('saved-recipes'); container.innerHTML = '';
+    if (recipes.length === 0) { container.innerHTML = '<div class="text-center text-gray-500 py-8">Nessuna ricetta salvata</div>'; return; }
+    recipes.forEach(recipe => { const recipeElement = document.createElement('div'); recipeElement.className = 'recipe-card p-5'; let ingredientsList = recipe.ingredients.map(ing => `<li>${ing.name}: ${ing.quantity}g</li>`).join(''); recipeElement.innerHTML = `<div class="flex justify-between items-start"><div><h4 class="font-bold text-lg text-gray-100 mb-3">${recipe.name}</h4><ul class="mt-2 text-sm text-gray-400 list-disc pl-5 space-y-1">${ingredientsList}</ul></div><div class="flex space-x-3"><button onclick="useRecipe('${recipe.id}')" class="btn-primary text-white p-3 rounded-full" aria-label="Usa ricetta"><i class="fas fa-plus" aria-hidden="true"></i></button><button onclick="deleteRecipe('${recipe.id}')" class="btn-danger text-white p-3 rounded-full" aria-label="Elimina ricetta"><i class="fas fa-trash" aria-hidden="true"></i></button></div></div>`; container.appendChild(recipeElement); });
+}
+window.deleteMeal = async function(mealId) { if (!mealId || !isOnline) { showToast(mealId ? "Sei offline. Impossibile eliminare." : "Errore: ID pasto non trovato.", true); return; } try { await deleteDoc(doc(db, `users/${userId}/meals`, mealId)); showToast('Pasto eliminato con successo!'); } catch (error) { console.error("Errore eliminazione pasto:", error); showToast("Errore durante l'eliminazione del pasto.", true); } }
+window.deleteRecipe = async function(recipeId) { if (!recipeId || !isOnline) { showToast(recipeId ? "Sei offline. Impossibile eliminare." : "Errore: ID ricetta non trovato.", true); return; } try { await deleteDoc(doc(db, `users/${userId}/recipes`, recipeId)); showToast('Ricetta eliminata con successo!'); } catch (error) { console.error("Errore eliminazione ricetta:", error); showToast("Errore durante l'eliminazione della ricetta.", true); } }
+window.useRecipe = async function(recipeId) {
+    const recipe = recipes.find(r => r.id === recipeId); if (!recipe) { showToast("Errore: Ricetta non trovata.", true); return; }
+    const mealType = document.getElementById('meal-type').value || '🍽️ Pranzo';
+    document.getElementById('meal-type').value = mealType;
+
+    recipe.ingredients.forEach(async (ingredient) => {
+        // Cerca l'alimento nel database invece che nella cache locale
+        const foodsCollection = collection(db, 'foods');
+        const q = query(foodsCollection, where('name_lowercase', '==', ingredient.name.toLowerCase()), limit(1));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+            const food = { id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() };
+            try {
+                let mealDate = new Date(selectedDate);
+                if (selectedDate.toDateString() === new Date().toDateString()) { 
+                    mealDate = new Date(); 
+                } else { 
+                    const defaultTimes = { '🌅 Colazione': { hours: 8, minutes: 0 }, '🍽️ Pranzo': { hours: 13, minutes: 0 }, '🌙 Cena': { hours: 20, minutes: 0 }, '🍪 Spuntino': { hours: 16, minutes: 0 } }; const time = defaultTimes[mealType] || { hours: 12, minutes: 0 }; mealDate.setHours(time.hours, time.minutes, 0, 0); 
+                }
+                await addDoc(collection(db, `users/${userId}/meals`), { ...food, quantity: ingredient.quantity, type: mealType, date: Timestamp.fromDate(mealDate) });
+            } catch (error) { console.error("Errore aggiunta ingrediente:", error); }
+        }
+    });
+    showToast(`Ricetta "${recipe.name}" aggiunta al diario!`);
+}
+async function addNewFood() {
+    if (!isOnline) { showToast("Sei offline. Impossibile aggiungere.", true); return; }
+    const name = document.getElementById('new-food-name').value.trim(); const calories = parseFloat(document.getElementById('new-food-calories').value); const proteins = parseFloat(document.getElementById('new-food-proteins').value); const carbs = parseFloat(document.getElementById('new-food-carbs').value); const fats = parseFloat(document.getElementById('new-food-fats').value); const fibers = parseFloat(document.getElementById('new-food-fibers').value) || 0;
+    if (!name || isNaN(calories) || isNaN(proteins) || isNaN(carbs) || isNaN(fats)) { showToast('Compila tutti i campi con valori validi (fibre opzionali).', true); return; }
+    try { await addDoc(collection(db, 'foods'), { name, name_lowercase: name.toLowerCase(), calories, proteins, carbs, fats, fibers }); showToast(`${name} aggiunto al database!`); ['new-food-name', 'new-food-calories', 'new-food-proteins', 'new-food-carbs', 'new-food-fats', 'new-food-fibers'].forEach(id => document.getElementById(id).value = ''); document.getElementById('new-food-name').focus(); } catch (error) { console.error("Errore aggiunta alimento:", error); showToast("Si è verificato un errore.", true); }
+}
+async function saveRecipe() {
+    if (!isOnline) { showToast("Sei offline. Impossibile salvare.", true); return; }
+    const name = document.getElementById('recipe-name').value.trim(); if (!name) { showToast('Inserisci un nome per la ricetta.', true); return; }
+    const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div')).map(el => ({ name: el.querySelector('.recipe-ingredient-name').value.trim(), quantity: parseInt(el.querySelector('.recipe-ingredient-quantity').value) })).filter(ing => ing.name && ing.quantity);
+    if (ingredients.length === 0) { showToast('Aggiungi almeno un ingrediente.', true); return; }
+    try { await addDoc(collection(db, `users/${userId}/recipes`), { name, ingredients }); showToast(`Ricetta "${name}" salvata!`); document.getElementById('recipe-name').value = ''; document.getElementById('recipe-ingredients').innerHTML = `<div class="flex space-x-3"><input type="text" class="recipe-ingredient-name flex-1 form-input" placeholder="Ingrediente" aria-label="Nome ingrediente"><input type="number" class="recipe-ingredient-quantity w-24 form-input" placeholder="g" aria-label="Quantità ingrediente"><button type="button" class="delete-btn text-red-500 hover:text-red-700" aria-label="Rimuovi ingrediente"><i class="fas fa-trash-alt"></i></button></div>`; document.getElementById('recipe-name').focus(); } catch (error) { console.error("Errore salvataggio ricetta:", error); showToast("Si è verificato un errore.", true); }
+}
+function showFoodLookupDetails(food) { const detailsContainer = document.getElementById('food-lookup-details'); document.getElementById('lookup-food-name').textContent = food.name; document.getElementById('lookup-food-calories').textContent = food.calories; document.getElementById('lookup-food-proteins').textContent = food.proteins; document.getElementById('lookup-food-carbs').textContent = food.carbs; document.getElementById('lookup-food-fats').textContent = food.fats; document.getElementById('lookup-food-fibers').textContent = food.fibers || 0; detailsContainer.classList.remove('hidden'); }
+async function handleFoodLookup(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    const resultsContainer = document.getElementById('food-lookup-results-list');
+    const detailsContainer = document.getElementById('food-lookup-details');
+    if (searchTerm.length < 2) { resultsContainer.innerHTML = ''; resultsContainer.style.display = 'none'; detailsContainer.classList.add('hidden'); return; }
+    try {
+        const q = query(collection(db, 'foods'), where('name_lowercase', '>=', searchTerm), where('name_lowercase', '<=', searchTerm + '\uf8ff'), orderBy('name_lowercase'), limit(5));
+        const querySnapshot = await getDocs(q);
+        const filteredFoods = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        resultsContainer.innerHTML = '';
+        if (filteredFoods.length > 0) {
+            resultsContainer.style.display = 'block';
+            filteredFoods.forEach((food, index) => {
+                const item = document.createElement('div');
+                item.className = 'p-4 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-b-0';
+                item.setAttribute('role', 'option'); item.setAttribute('tabindex', '0'); item.id = `lookup-option-${index}`;
+                item.innerHTML = `<div class="font-medium text-gray-800">${food.name}</div><div class="text-sm text-gray-600">${food.calories} cal/100g</div>`;
+                item.addEventListener('click', () => { document.getElementById('food-lookup-search').value = food.name; showFoodLookupDetails(food); resultsContainer.innerHTML = ''; resultsContainer.style.display = 'none'; });
+                item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); item.click(); } });
+                resultsContainer.appendChild(item);
+            });
+        } else { resultsContainer.innerHTML = '<div class="p-4 text-gray-500">Nessun alimento trovato.</div>'; resultsContainer.style.display = 'block'; detailsContainer.classList.add('hidden'); }
+        document.addEventListener('click', function hide(e) { if (!e.target.closest('#food-lookup-section')) { resultsContainer.style.display = 'none'; document.removeEventListener('click', hide); } });
+    } catch (error) { console.error("Errore ricerca alimento:", error); showToast("Errore durante la ricerca.", true); }
+}
+async function handleSearch(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    const resultsContainer = document.getElementById('search-results');
+    if (searchTerm.length < 2) { resultsContainer.innerHTML = ''; resultsContainer.style.display = 'none'; selectedFood = null; return; }
+    try {
+        const q = query(collection(db, 'foods'), where('name_lowercase', '>=', searchTerm), where('name_lowercase', '<=', searchTerm + '\uf8ff'), orderBy('name_lowercase'), limit(5));
+        const querySnapshot = await getDocs(q);
+        const filteredFoods = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        resultsContainer.innerHTML = '';
+        if (filteredFoods.length > 0) {
+            resultsContainer.style.display = 'block';
+            filteredFoods.forEach((food, index) => {
+                const item = document.createElement('div');
+                item.className = 'p-4 hover:bg-purple-50 cursor-pointer border-b border-gray-100 last:border-b-0';
+                item.setAttribute('role', 'option'); item.setAttribute('tabindex', '0'); item.id = `food-option-${index}`;
+                item.innerHTML = `<div class="font-medium text-gray-800">${food.name}</div><div class="text-sm text-gray-600">${food.calories} cal/100g</div>`;
+                item.addEventListener('click', () => { document.getElementById('food-search').value = food.name; selectedFood = food; resultsContainer.innerHTML = ''; resultsContainer.style.display = 'none'; document.getElementById('meal-quantity').focus(); });
+                item.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); item.click(); } });
+                resultsContainer.appendChild(item);
+            });
+        } else { resultsContainer.innerHTML = '<div class="p-4 text-gray-500">Nessun alimento trovato.</div>'; resultsContainer.style.display = 'block'; selectedFood = null; }
+        document.addEventListener('click', function hide(e) { if (!e.target.closest('.relative')) { resultsContainer.style.display = 'none'; document.removeEventListener('click', hide); } });
+    } catch (error) { console.error("Errore ricerca alimento:", error); showToast("Errore durante la ricerca.", true); }
+}
+async function addMeal() { if (!isOnline) { showToast("Sei offline. Impossibile aggiungere.", true); return; } const quantity = parseFloat(document.getElementById('meal-quantity').value); const type = document.getElementById('meal-type').value; if (!selectedFood || isNaN(quantity) || quantity <= 0) { showToast('Seleziona un alimento e inserisci una quantità valida.', true); return; } let mealDate = new Date(selectedDate); if (selectedDate.toDateString() === new Date().toDateString()) { mealDate = new Date(); } else { const defaultTimes = { '🌅 Colazione': { hours: 8, minutes: 0 }, '🍽️ Pranzo': { hours: 13, minutes: 0 }, '🌙 Cena': { hours: 20, minutes: 0 }, '🍪 Spuntino': { hours: 16, minutes: 0 }}; const time = defaultTimes[type] || { hours: 12, minutes: 0 }; mealDate.setHours(time.hours, time.minutes, 0, 0); } try { await addDoc(collection(db, `users/${userId}/meals`), { name: selectedFood.name, calories: selectedFood.calories, proteins: selectedFood.proteins, carbs: selectedFood.carbs, fats: selectedFood.fats, fibers: selectedFood.fibers || 0, quantity, type, date: Timestamp.fromDate(mealDate) }); showToast('Pasto aggiunto al diario!'); document.getElementById('food-search').value = ''; document.getElementById('meal-quantity').value = ''; selectedFood = null; document.getElementById('search-results').innerHTML = ''; document.getElementById('search-results').style.display = 'none'; document.getElementById('food-search').focus(); } catch (error) { console.error("Errore aggiunta pasto:", error); showToast("Si è verificato un errore.", true); } }
+async function fetchFoodFromBarcode(barcode, callback) {
+    showToast('Ricerca prodotto in corso...');
+    const url = `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Prodotto non trovato.');
+        const data = await response.json();
+        if (data.status !== 1 || !data.product) { showToast('Prodotto non trovato o dati incompleti.', true); return; }
+        const product = data.product;
+        const nutriments = product.nutriments;
+        const foodData = {
+            name: product.product_name || 'Nome non disponibile',
+            calories: nutriments['energy-kcal_100g'] || (nutriments.energy_100g / 4.184) || 0,
+            proteins: nutriments.proteins_100g || 0,
+            carbs: nutriments.carbohydrates_100g || 0,
+            fats: nutriments.fat_100g || 0,
+            fibers: nutriments.fiber_100g || 0
+        };
+        callback(foodData);
+    } catch (error) {
+        console.error('Errore API Open Food Facts:', error);
+        showToast(error.message, true);
+    }
+}
+function populateMealForm(foodData) {
+    document.getElementById('food-search').value = foodData.name;
+    document.getElementById('meal-quantity').value = 100;
+    selectedFood = foodData;
+    showToast(`Prodotto trovato: ${foodData.name}`);
+    document.getElementById('meal-quantity').focus();
+}
+function populateNewFoodForm(foodData) {
+    const section = document.getElementById('food-section');
+    if (section.classList.contains('collapsed')) {
+        section.querySelector('.section-header').click();
+    }
+    document.getElementById('new-food-name').value = foodData.name;
+    document.getElementById('new-food-calories').value = Math.round(foodData.calories);
+    document.getElementById('new-food-proteins').value = (foodData.proteins || 0).toFixed(1);
+    document.getElementById('new-food-carbs').value = (foodData.carbs || 0).toFixed(1);
+    document.getElementById('new-food-fats').value = (foodData.fats || 0).toFixed(1);
+    document.getElementById('new-food-fibers').value = (foodData.fibers || 0).toFixed(1);
+    showToast(`Dati di "${foodData.name}" importati. Controlla e salva.`);
+    document.getElementById('new-food-name').focus();
+}

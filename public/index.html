@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NutriTrack - Smart Food Diary</title>
+    <meta name="description" content="Il futuro del tracking nutrizionale">
+    <meta name="theme-color" content="#0F172A">
+    
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.freepik.com/512/8280/8280802.png">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-particles">
+    <div id="offline-indicator" class="offline-indicator" role="alert" aria-live="assertive">
+        <i class="fas fa-wifi-slash mr-2"></i>
+        Sei offline. Alcune funzionalità potrebbero non essere disponibili.
+    </div>
+    
+    <div id="loading-overlay" class="fixed inset-0 bg-slate-900 bg-opacity-90 flex items-center justify-center z-50">
+        <div class="text-center">
+            <div class="loader mb-6"></div>
+            <h2 class="text-2xl font-bold text-slate-200 mb-2">NutriTrack</h2>
+            <p class="text-slate-400">Inizializzazione in corso...</p>
+        </div>
+    </div>
+    
+    <div id="login-screen" class="fixed inset-0 bg-slate-900 bg-opacity-80 flex items-center justify-center z-40 hidden">
+        <div class="text-center p-8 glass-card rounded-2xl max-w-sm w-full mx-4">
+            <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 mb-4">NutriTrack</h1>
+            <p class="text-slate-300 mb-8">Accedi per iniziare a tracciare la tua alimentazione.</p>
+            <button id="login-btn" class="btn-modern btn-primary w-full text-white py-3 rounded-full font-semibold text-lg flex items-center justify-center space-x-3">
+                <i class="fab fa-google" aria-hidden="true"></i>
+                <span>Accedi con Google</span>
+            </button>
+        </div>
+    </div>
+    
+    <div id="app" class="container mx-auto p-4 max-w-7xl hidden">
+        <div id="top-bar" class="hidden flex items-center justify-between gap-4 mb-8 p-4 glass-card rounded-2xl">
+            <div id="user-info" class="flex items-center space-x-4 min-w-0">
+                <img id="user-photo" src="" alt="Foto profilo utente" class="w-12 h-12 rounded-full border-2 border-indigo-500 flex-shrink-0">
+                <div class="min-w-0">
+                    <p class="font-semibold text-slate-200 truncate" id="user-name"></p>
+                    <p class="text-sm text-slate-400 truncate" id="user-email"></p>
+                </div>
+            </div>
+            <button id="logout-btn" class="btn-modern btn-danger md:px-5 px-3 py-2 rounded-full font-medium flex items-center md:space-x-2 flex-shrink-0" aria-label="Esci">
+                <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+                <span class="hidden md:inline">Esci</span>
+            </button>
+        </div>
+        
+        <header class="main-header">
+            <h1 class="main-title">NutriTrack</h1>
+            <p class="main-subtitle">Il futuro del tracking nutrizionale</p>
+        </header>
+        
+        <div class="glass-card p-8 rounded-3xl mb-8">
+            <div class="flex flex-col items-center gap-4">
+                <!-- Date navigation row -->
+                <div class="flex items-center justify-center gap-2 w-full">
+                    <button id="prev-day" class="btn-modern btn-primary !p-4" aria-label="Giorno precedente">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    
+                    <input type="date" id="date-picker" class="input-modern text-center w-full max-w-xs !px-2">
+                    
+                    <button id="next-day" class="btn-modern btn-primary !p-4" aria-label="Giorno successivo">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+                
+                <!-- Today button -->
+                <button id="today-btn" class="btn-modern btn-success flex items-center gap-2">
+                    <i class="fas fa-calendar-day"></i>
+                    <span>Oggi</span>
+                </button>
+            </div>
+            
+            <div class="text-center mt-8">
+                <h2 id="current-date-display" class="text-4xl font-bold mb-2"></h2>
+                <p id="day-info" class="text-slate-400 text-lg"></p>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-10">
+            <div class="glass-card glow p-8 rounded-3xl">
+                <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center">
+                        <i class="fas fa-plus text-white"></i>
+                    </div>
+                    Aggiungi Pasto
+                </h2>
+                
+                <div class="space-y-6">
+                    <div>
+                        <label for="food-search" class="block text-sm font-semibold text-slate-300 mb-3">Cerca Alimento o Scansiona</label>
+                        <div id="food-search-wrapper" class="relative">
+                            <input type="text" id="food-search" class="search-input w-full pl-12" placeholder="Cerca un alimento..." autocomplete="off">
+                            <i id="food-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none transition-opacity duration-300"></i>
+                            <button id="scan-barcode-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3">
+                                <i class="fas fa-barcode"></i>
+                            </button>
+                            <div id="search-results" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="meal-type" class="block text-sm font-semibold text-slate-300 mb-3">Tipo Pasto</label>
+                            <select id="meal-type" class="input-modern w-full">
+                                <option value="🌅 Colazione">🌅 Colazione</option>
+                                <option value="🍽️ Pranzo">🍽️ Pranzo</option>
+                                <option value="🌙 Cena">🌙 Cena</option>
+                                <option value="🍪 Spuntino">🍪 Spuntino</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="meal-quantity" class="block text-sm font-semibold text-slate-300 mb-3">Quantità (g)</label>
+                            <input type="number" id="meal-quantity" class="input-modern w-full" placeholder="100">
+                        </div>
+                    </div>
+                    
+                    <button id="add-meal-btn" class="btn-modern btn-primary w-full !py-4 text-lg">
+                        <i class="fas fa-plus-circle mr-3"></i>
+                        Aggiungi al Diario
+                    </button>
+                </div>
+            </div>
+            
+            <div class="glass-card glow p-8 rounded-3xl">
+                <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 flex items-center justify-center">
+                        <i class="fas fa-utensils text-white"></i>
+                    </div>
+                    Pasti del Giorno
+                </h2>
+                <div id="selected-day-meals" class="space-y-6 max-h-96 overflow-y-auto pr-2" role="region" aria-label="Pasti del giorno">
+                    </div>
+            </div>
+        </div>
+        
+        <div class="stat-card p-8 mb-10 rounded-3xl">
+            <h3 class="text-3xl font-bold text-center mb-8 text-white">Riepilogo Nutrizionale</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-8">
+                <div class="text-center">
+                    <div id="total-calories" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
+                    <div class="text-white/80 font-medium">Calorie</div>
+                </div>
+                <div class="text-center">
+                    <div id="total-proteins" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
+                    <div class="text-white/80 font-medium">Proteine (g)</div>
+                </div>
+                <div class="text-center">
+                    <div id="total-carbs" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
+                    <div class="text-white/80 font-medium">Carboidrati (g)</div>
+                </div>
+                <div class="text-center">
+                    <div id="total-fats" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
+                    <div class="text-white/80 font-medium">Grassi (g)</div>
+                </div>
+                <div class="text-center">
+                    <div id="total-fibers" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
+                    <div class="text-white/80 font-medium">Fibre (g)</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
+            <div class="lg:col-span-2">
+                <div class="glass-card p-8 rounded-3xl">
+                    <h3 class="text-2xl font-bold mb-8 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 flex items-center justify-center">
+                            <i class="fas fa-target text-white text-sm"></i>
+                        </div>
+                        Obiettivi
+                    </h3>
+                    
+                    <div class="space-y-6">
+                        <div>
+                            <div class="flex justify-between mb-3">
+                                <span class="font-medium text-slate-300">Calorie</span>
+                                <span id="calorie-progress-text" class="font-bold text-slate-100" aria-live="polite">0/2000</span>
+                            </div>
+                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso calorie">
+                                <div id="calorie-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #6366f1, #8b5cf6); width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between mb-3">
+                                <span class="font-medium text-slate-300">Proteine</span>
+                                <span id="protein-progress-text" class="font-bold text-slate-100" aria-live="polite">0/150g</span>
+                            </div>
+                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso proteine">
+                                <div id="protein-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #10b981, #059669); width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between mb-3">
+                                <span class="font-medium text-slate-300">Carboidrati</span>
+                                <span id="carb-progress-text" class="font-bold text-slate-100" aria-live="polite">0/250g</span>
+                            </div>
+                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso carboidrati">
+                                <div id="carb-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between mb-3">
+                                <span class="font-medium text-slate-300">Grassi</span>
+                                <span id="fat-progress-text" class="font-bold text-slate-100" aria-live="polite">0/70g</span>
+                            </div>
+                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso grassi">
+                                <div id="fat-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between mb-3">
+                                <span class="font-medium text-slate-300">Fibre</span>
+                                <span id="fiber-progress-text" class="font-bold text-slate-100" aria-live="polite">0/30g</span>
+                            </div>
+                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso fibre">
+                                <div id="fiber-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #4dc0b5, #3490dc); width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <button id="edit-goals-btn" class="btn-modern btn-primary w-full">
+                            <i class="fas fa-cog mr-2"></i>
+                            Modifica Obiettivi
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+            <div class="chart-container">
+                <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center">
+                        <i class="fas fa-chart-line text-white text-sm"></i>
+                    </div>
+                    Andamento Calorico
+                </h3>
+                <div class="h-80">
+                    <canvas id="calorie-chart" role="img" aria-label="Grafico andamento calorico"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-600 flex items-center justify-center">
+                        <i class="fas fa-chart-pie text-white text-sm"></i>
+                    </div>
+                    Macronutrienti
+                </h3>
+                <div class="h-80">
+                    <canvas id="macro-chart" role="img" aria-label="Grafico distribuzione macronutrienti"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="space-y-8">
+
+            <div class="collapsible-section collapsed">
+                <button class="section-header" aria-expanded="false" aria-controls="recipes-content">
+                    <h2 class="text-2xl font-bold flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-600 flex items-center justify-center">
+                            <i class="fas fa-book text-white"></i>
+                        </div>
+                        Le Mie Ricette
+                    </h2>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </button>
+                <div id="recipes-content" class="section-content">
+                    <div class="glass-card p-8 rounded-3xl mt-4">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <div>
+                                <h3 class="text-xl font-bold mb-6">Crea Nuova Ricetta</h3>
+                                <div class="space-y-6">
+                                    <input type="text" id="recipe-name" class="input-modern w-full" placeholder="Nome ricetta">
+                                    
+                                    <div>
+                                        <label class="block text-sm font-semibold text-slate-300 mb-3">Ingredienti</label>
+                                        <div id="recipe-ingredients" class="space-y-3">
+                                            <div class="flex gap-3">
+                                                <input type="text" class="recipe-ingredient-name input-modern flex-1" placeholder="Ingrediente">
+                                                <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g">
+                                                <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn" aria-label="Rimuovi ingrediente">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <button id="add-ingredient-btn" class="mt-4 text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2">
+                                            <i class="fas fa-plus-circle"></i>
+                                            Aggiungi Ingrediente
+                                        </button>
+                                    </div>
+                                    
+                                    <button id="save-recipe-btn" class="btn-modern btn-success w-full">
+                                        <i class="fas fa-save mr-2"></i>
+                                        Salva Ricetta
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <h3 class="text-xl font-bold mb-6">Ricette Salvate</h3>
+                                <div id="saved-recipes" class="space-y-4 max-h-96 overflow-y-auto" role="region" aria-label="Ricette salvate">
+                                    </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section collapsed">
+                <button class="section-header" aria-expanded="false" aria-controls="history-content">
+                    <h2 class="text-2xl font-bold flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 flex items-center justify-center">
+                            <i class="fas fa-history text-white"></i>
+                        </div>
+                        Storico Ultimi 7 Giorni
+                    </h2>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </button>
+                <div id="history-content" class="section-content">
+                    <div class="glass-card p-8 rounded-3xl mt-4">
+                        <div class="overflow-x-auto">
+                            <table class="w-full" role="table" aria-label="Storico pasti">
+                                <thead>
+                                    <tr class="border-b border-slate-700">
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Data</th>
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Calorie</th>
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Proteine</th>
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Carboidrati</th>
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Grassi</th>
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Fibre</th>
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Pasti</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="weekly-history">
+                                    </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section collapsed">
+                <button class="section-header" aria-expanded="false" aria-controls="new-food-content">
+                     <h2 class="text-2xl font-bold flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-teal-500 to-cyan-600 flex items-center justify-center">
+                            <i class="fas fa-plus text-white"></i>
+                        </div>
+                        Aggiungi Nuovo Alimento
+                    </h2>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </button>
+                <div id="new-food-content" class="section-content">
+                    <div class="glass-card p-8 rounded-3xl mt-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            <div class="lg:col-span-3 relative">
+                                 <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-12" aria-label="Nome alimento">
+                                 <button id="scan-barcode-for-new-food-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
+                                    <i class="fas fa-barcode"></i>
+                                </button>
+                            </div>
+                            <input type="number" id="new-food-calories" class="input-modern" placeholder="Calorie (per 100g)">
+                            <input type="number" id="new-food-proteins" class="input-modern" placeholder="Proteine (g)">
+                            <input type="number" id="new-food-carbs" class="input-modern" placeholder="Carboidrati (g)">
+                            <input type="number" id="new-food-fats" class="input-modern" placeholder="Grassi (g)">
+                            <input type="number" id="new-food-fibers" class="input-modern" placeholder="Fibre (g)">
+                            <button id="add-food-btn" class="btn-modern btn-success lg:col-span-3 w-full">
+                                <i class="fas fa-plus-circle mr-2"></i>
+                                Aggiungi Alimento
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="collapsible-section collapsed">
+                <button class="section-header" aria-expanded="false" aria-controls="food-lookup-content">
+                     <h2 class="text-2xl font-bold flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-amber-500 to-yellow-600 flex items-center justify-center">
+                            <i class="fas fa-search-plus text-white"></i>
+                        </div>
+                        Cerca Alimento nel Database
+                    </h2>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
+                </button>
+                <div id="food-lookup-content" class="section-content">
+                    <div class="glass-card p-8 rounded-3xl mt-4 min-h-96">
+                        <div id="food-lookup-wrapper" class="relative mb-4">
+                            <i id="food-lookup-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 transition-opacity duration-300" aria-hidden="true"></i>
+                            <input type="text" id="food-lookup-search" class="search-input w-full pl-12" placeholder="Cerca un alimento per vederne i dettagli..." aria-label="Cerca alimento nel database" autocomplete="off">
+                            <div id="food-lookup-results-list" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden" role="listbox" aria-label="Risultati ricerca alimento"></div>
+                        </div>
+                        <div id="food-lookup-details" class="mt-6 p-6 bg-slate-800 rounded-xl hidden">
+                            <h4 id="lookup-food-name" class="text-xl font-bold text-slate-200 mb-4"></h4>
+                            <ul class="space-y-3 text-slate-300">
+                                <li><i class="fas fa-fire-alt text-red-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Calorie:</strong> <span id="lookup-food-calories"></span> / 100g</li>
+                                <li><i class="fas fa-drumstick-bite text-green-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Proteine:</strong> <span id="lookup-food-proteins"></span> g</li>
+                                <li><i class="fas fa-bread-slice text-yellow-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Carboidrati:</strong> <span id="lookup-food-carbs"></span> g</li>
+                                <li><i class="fas fa-seedling text-blue-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Fibre:</strong> <span id="lookup-food-fibers"></span> g</li>
+                                <li><i class="fas fa-bacon text-pink-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Grassi:</strong> <span id="lookup-food-fats"></span> g</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div> </div>
+    
+    <div id="toast" class="toast fixed bottom-8 left-8 p-4 rounded-2xl opacity-0 transform translate-y-10 transition-all duration-500 z-50 flex items-center gap-3" role="alert" aria-live="assertive">
+        <div class="w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center">
+            <i class="fas fa-check text-white text-sm"></i>
+        </div>
+        <span class="font-medium text-slate-100">Messaggio di notifica</span>
+    </div>
+    
+    <div id="goals-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-content p-8 max-w-md w-full mx-4">
+            <h3 id="modal-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Obiettivi</h3>
+            <div class="space-y-6">
+                <input type="number" id="goal-calories" class="input-modern w-full" placeholder="Calorie giornaliere">
+                <input type="number" id="goal-proteins" class="input-modern w-full" placeholder="Proteine (g)">
+                <input type="number" id="goal-carbs" class="input-modern w-full" placeholder="Carboidrati (g)">
+                <input type="number" id="goal-fats" class="input-modern w-full" placeholder="Grassi (g)">
+                <input type="number" id="goal-fibers" class="input-modern w-full" placeholder="Fibre (g)">
+            </div>
+            <div class="flex gap-4 mt-8">
+                <button id="cancel-goals-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
+                <button id="save-goals-btn" class="btn-modern btn-primary flex-1">Salva</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="scanner-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
+        <div class="modal-content p-8 max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="scanner-title" class="text-2xl font-bold text-white">Scansiona un codice a barre</h3>
+                <button id="close-scanner-btn" class="text-white hover:text-slate-300" aria-label="Chiudi scanner">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            <div class="text-center">
+                <div id="scanner-feedback" class="text-slate-300 mb-4">
+                    Elaborazione dell'immagine...
+                </div>
+                 <div id="scanner-container" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+    
+    <input type="file" id="barcode-file-input" accept="image/*" capture class="hidden">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+    <script type="module" src="script.js"></script>
+</body>
+</html>

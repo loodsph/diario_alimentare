@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Script di Pulizia Database</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+
+    <div id="login-container" class="text-center p-8 bg-white rounded-lg shadow-md">
+        <h1 class="text-2xl font-bold mb-4">Pulizia Database Alimenti</h1>
+        <p class="mb-6">Accedi con Google per eseguire lo script di pulizia.</p>
+        <button id="login-btn" class="bg-blue-500 text-white px-6 py-2 rounded">Accedi con Google</button>
+    </div>
+
+    <div id="script-container" class="hidden text-center p-8 bg-white rounded-lg shadow-md max-w-lg">
+        <h1 class="text-2xl font-bold mb-4">Pulizia Database Alimenti</h1>
+        <p class="mb-2">Sei autenticato come <strong id="user-email"></strong>.</p>
+        <p class="mb-6">Premi il pulsante per rimuovere il campo 'name_lowercase' da tutti gli alimenti nel database.</p>
+        <button id="run-script-btn" class="bg-red-500 text-white px-6 py-2 rounded">Esegui Script di Pulizia</button>
+        <div id="status" class="mt-4 text-gray-600"></div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, collection, getDocs, writeBatch, doc, deleteField } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCCwhGg3hSQauEXmA1YKMgH60JQk9VNvXA",
+            authDomain: "diario-alimentare-4f07f.firebaseapp.com",
+            projectId: "diario-alimentare-4f07f",
+            storageBucket: "diario-alimentare-4f07f.appspot.com",
+            messagingSenderId: "904900489529",
+            appId: "1:904900489529:web:bb8d121f2a9a206c1538e8",
+            measurementId: "G-JYDET1ZW5K"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        const loginContainer = document.getElementById('login-container');
+        const scriptContainer = document.getElementById('script-container');
+        const loginBtn = document.getElementById('login-btn');
+        const runScriptBtn = document.getElementById('run-script-btn');
+        const userEmailEl = document.getElementById('user-email');
+        const statusEl = document.getElementById('status');
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                loginContainer.classList.add('hidden');
+                scriptContainer.classList.remove('hidden');
+                userEmailEl.textContent = user.email;
+            } else {
+                loginContainer.classList.remove('hidden');
+                scriptContainer.classList.add('hidden');
+            }
+        });
+
+        loginBtn.addEventListener('click', () => {
+            const provider = new GoogleAuthProvider();
+            signInWithPopup(auth, provider).catch(error => {
+                statusEl.textContent = `Errore di login: ${error.message}`;
+                statusEl.classList.add('text-red-500');
+            });
+        });
+
+        runScriptBtn.addEventListener('click', async () => {
+            statusEl.textContent = 'Inizio pulizia...';
+            statusEl.classList.remove('text-red-500', 'text-green-500');
+            runScriptBtn.disabled = true;
+            runScriptBtn.classList.add('opacity-50');
+
+            try {
+                const foodsRef = collection(db, 'foods');
+                const snapshot = await getDocs(foodsRef);
+                
+                const docsToClean = snapshot.docs.filter(d => d.data().hasOwnProperty('name_lowercase'));
+
+                if (docsToClean.length === 0) {
+                    statusEl.textContent = 'Nessun alimento da pulire. Il campo "name_lowercase" non è stato trovato.';
+                    statusEl.classList.add('text-green-500');
+                    return;
+                }
+
+                const batch = writeBatch(db);
+                docsToClean.forEach(docSnapshot => {
+                    batch.update(doc(db, 'foods', docSnapshot.id), {
+                        name_lowercase: deleteField()
+                    });
+                });
+
+                await batch.commit();
+                statusEl.textContent = `Pulizia completata! Il campo "name_lowercase" è stato rimosso da ${docsToClean.length} alimenti.`;
+                statusEl.classList.add('text-green-500');
+
+            } catch (error) {
+                console.error("Errore durante la pulizia:", error);
+                statusEl.textContent = `Errore: ${error.message}. Controlla le regole di sicurezza di Firestore.`;
+                statusEl.classList.add('text-red-500');
+            } finally {
+                runScriptBtn.disabled = false;
+                runScriptBtn.classList.remove('opacity-50');
+            }
+        });
+    </script>
+</body>
+</html>
