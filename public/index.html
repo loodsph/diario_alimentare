@@ -234,9 +234,45 @@
                             </div>
                         </div>
                         
+                        <div>
+                            <div class="flex justify-between mb-3">
+                                <span class="font-medium text-slate-300">Acqua</span>
+                                <span id="water-progress-text" class="font-bold text-slate-100" aria-live="polite">0/8 bicchieri</span>
+                            </div>
+                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso acqua">
+                                <div id="water-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #0ea5e9, #06b6d4); width: 0%"></div>
+                            </div>
+                        </div>
+                        
                         <button id="edit-goals-btn" class="btn-modern btn-primary w-full">
                             <i class="fas fa-cog mr-2"></i>
                             Modifica Obiettivi
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="glass-card glow p-8 rounded-3xl flex flex-col">
+                <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-r from-sky-500 to-cyan-400 flex items-center justify-center">
+                        <i class="fas fa-tint text-white text-sm"></i>
+                    </div>
+                    Traccia Acqua
+                </h3>
+                <div class="flex-grow flex flex-col items-center justify-center">
+                    <div id="water-glasses-container" class="flex flex-wrap justify-center gap-4 mb-6" aria-label="Bicchieri d'acqua bevuti">
+                        <!-- I bicchieri verranno generati da JavaScript -->
+                    </div>
+                    <p id="water-count-text" class="text-xl font-bold text-slate-200 mb-6" aria-live="polite">0 / 8 bicchieri</p>
+                    <div class="flex items-center gap-4">
+                        <button id="remove-water-btn" class="btn-modern bg-slate-600 !p-4" aria-label="Rimuovi un bicchiere d'acqua">
+                            <i class="fas fa-minus"></i>
+                        </button>
+                        <button id="add-water-btn" class="btn-modern btn-primary !p-4" aria-label="Aggiungi un bicchiere d'acqua">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                        <button id="reset-water-btn" class="btn-modern btn-danger !p-4" aria-label="Resetta il conteggio dell'acqua">
+                            <i class="fas fa-sync-alt"></i>
                         </button>
                     </div>
                 </div>
@@ -345,6 +381,7 @@
                                         <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Carboidrati</th>
                                         <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Grassi</th>
                                         <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Fibre</th>
+                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Acqua</th>
                                         <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Pasti</th>
                                     </tr>
                                 </thead>
@@ -432,12 +469,31 @@
     <div id="goals-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-content p-8 max-w-md w-full mx-4">
             <h3 id="modal-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Obiettivi</h3>
-            <div class="space-y-6">
-                <input type="number" id="goal-calories" class="input-modern w-full" placeholder="Calorie giornaliere">
-                <input type="number" id="goal-proteins" class="input-modern w-full" placeholder="Proteine (g)">
-                <input type="number" id="goal-carbs" class="input-modern w-full" placeholder="Carboidrati (g)">
-                <input type="number" id="goal-fats" class="input-modern w-full" placeholder="Grassi (g)">
-                <input type="number" id="goal-fibers" class="input-modern w-full" placeholder="Fibre (g)">
+            <div class="space-y-4">
+                <div>
+                    <label for="goal-calories" class="block text-sm font-medium text-slate-300 mb-2">Calorie</label>
+                    <input type="number" id="goal-calories" class="input-modern w-full" placeholder="es. 2000">
+                </div>
+                <div>
+                    <label for="goal-proteins" class="block text-sm font-medium text-slate-300 mb-2">Proteine (g)</label>
+                    <input type="number" id="goal-proteins" class="input-modern w-full" placeholder="es. 150">
+                </div>
+                <div>
+                    <label for="goal-carbs" class="block text-sm font-medium text-slate-300 mb-2">Carboidrati (g)</label>
+                    <input type="number" id="goal-carbs" class="input-modern w-full" placeholder="es. 250">
+                </div>
+                <div>
+                    <label for="goal-fats" class="block text-sm font-medium text-slate-300 mb-2">Grassi (g)</label>
+                    <input type="number" id="goal-fats" class="input-modern w-full" placeholder="es. 70">
+                </div>
+                <div>
+                    <label for="goal-fibers" class="block text-sm font-medium text-slate-300 mb-2">Fibre (g)</label>
+                    <input type="number" id="goal-fibers" class="input-modern w-full" placeholder="es. 30">
+                </div>
+                <div>
+                    <label for="goal-water" class="block text-sm font-medium text-slate-300 mb-2">Bicchieri d'acqua</label>
+                    <input type="number" id="goal-water" class="input-modern w-full" placeholder="es. 8">
+                </div>
             </div>
             <div class="flex gap-4 mt-8">
                 <button id="cancel-goals-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>

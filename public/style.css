@@ -566,3 +566,17 @@ select.input-modern {
 .flash-update {
     animation: flash-update-kf 0.7s ease-in-out;
 }
+
+/* Water Tracker */
+.water-glass {
+    font-size: 2.5rem;
+    color: rgba(148, 163, 184, 0.2); /* slate-400 con opacità */
+    transition: all 0.3s ease;
+    cursor: default;
+}
+
+.water-glass.filled {
+    color: #0ea5e9; /* sky-500 */
+    transform: scale(1.1);
+    text-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
+}

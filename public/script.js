@@ -1,7 +1,7 @@
 // Importa le funzioni necessarie da Firebase SDK
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from './firebase-config.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
@@ -17,13 +17,18 @@ let calorieChart = null;
 let macroChart = null;
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
+let waterCount = 0;
+let waterUnsubscribe = null;
+let waterHistory = {}; // e.g., { '2024-05-24': 8, '2024-05-23': 6 }
+let waterHistoryUnsubscribe = null;
 
 let nutritionGoals = {
     calories: 2000,
     proteins: 150,
     carbs: 250,
     fats: 70,
-    fibers: 30
+    fibers: 30,
+    water: 8 // Obiettivo di bicchieri d'acqua
 };
 
 // --- INIZIALIZZAZIONE ---
@@ -46,6 +51,8 @@ window.onload = () => {
                 
                 updateUserUI(user);
                 await loadNutritionGoals();
+                listenToWaterData();
+                listenToWaterHistory();
                 await loadInitialData();
                 
                 updateDateDisplay();
@@ -65,6 +72,11 @@ window.onload = () => {
             appContainer.classList.add('hidden');
             loginScreen.classList.remove('hidden');
             loadingOverlay.classList.add('hidden');
+            if (waterUnsubscribe) waterUnsubscribe();
+            if (waterHistoryUnsubscribe) waterHistoryUnsubscribe();
+            waterCount = 0;
+            waterHistory = {};
+            renderWaterTracker();
             resetAppData();
         }
     });
@@ -80,6 +92,7 @@ function setupListeners() {
     document.getElementById('date-picker').addEventListener('change', (e) => {
         const [year, month, day] = e.target.value.split('-').map(Number);
         selectedDate = new Date(year, month - 1, day);
+        listenToWaterData();
         updateAllUI();
     });
 
@@ -91,6 +104,11 @@ function setupListeners() {
     document.getElementById('save-recipe-btn').addEventListener('click', saveRecipe);
     document.getElementById('add-food-btn').addEventListener('click', addNewFood);
     document.getElementById('add-meal-btn').addEventListener('click', addMeal);
+
+    // Water Tracker
+    document.getElementById('add-water-btn').addEventListener('click', () => incrementWaterCount(1));
+    document.getElementById('remove-water-btn').addEventListener('click', () => incrementWaterCount(-1));
+    document.getElementById('reset-water-btn').addEventListener('click', () => setWaterCount(0));
 
     // Auth
     document.getElementById('login-btn').addEventListener('click', signInWithGoogle);
@@ -294,9 +312,11 @@ async function loadNutritionGoals() {
         const goalsDoc = doc(db, `users/${userId}/goals/nutrition`);
         const docSnap = await getDoc(goalsDoc);
         if (docSnap.exists()) {
-            nutritionGoals = docSnap.data();
+            const loadedGoals = docSnap.data();
+            // Unisce gli obiettivi caricati con quelli di default per garantire che tutti i campi esistano
+            nutritionGoals = { ...nutritionGoals, ...loadedGoals };
         } else {
-            await setDoc(goalsDoc, nutritionGoals);
+            await setDoc(goalsDoc, nutritionGoals); // Salva gli obiettivi di default per i nuovi utenti
         }
         updateGoalsInputs();
     } catch (error) {
@@ -656,6 +676,7 @@ function renderWeeklyHistory() {
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.carbs.toFixed(1)}g</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.fats.toFixed(1)}g</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.fibers.toFixed(1)}g</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${waterHistory[date.toISOString().split('T')[0]] || 0} bicchieri</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-400">${dayMeals.length} pasti</td>
         `;
         container.appendChild(row);
@@ -702,6 +723,33 @@ function updateNutritionProgress() {
     updateProgress('fibers', totals.fibers);
 }
 
+function renderWaterTracker() {
+    const container = document.getElementById('water-glasses-container');
+    const text = document.getElementById('water-count-text');
+    if (!container || !text) return;
+
+    container.innerHTML = '';
+    for (let i = 1; i <= nutritionGoals.water; i++) {
+        const isFilled = i <= waterCount;
+        container.innerHTML += `<i class="fas fa-glass-water water-glass ${isFilled ? 'filled' : ''}" aria-hidden="true"></i>`;
+    }
+    
+    text.textContent = `${waterCount} / ${nutritionGoals.water} bicchieri`;
+
+    // Aggiorna la barra di progresso nella sezione Obiettivi
+    const waterProgressText = document.getElementById('water-progress-text');
+    const waterProgressBar = document.getElementById('water-progress');
+    
+    if (waterProgressText && waterProgressBar) {
+        const goal = nutritionGoals.water || 8;
+        const percent = goal > 0 ? Math.min(100, (waterCount / goal) * 100) : 0;
+        
+        waterProgressBar.style.width = `${percent}%`;
+        waterProgressText.textContent = `${waterCount}/${goal} bicchieri`;
+    }
+}
+
+
 
 // --- FUNZIONI UTILITY E HELPERS ---
 
@@ -730,6 +778,7 @@ function changeDay(offset) {
     } else {
         selectedDate.setDate(selectedDate.getDate() + offset);
     }
+    listenToWaterData();
     updateAllUI();
 }
 
@@ -778,6 +827,8 @@ function resetAppData() {
     if (calorieChart) { calorieChart.destroy(); calorieChart = null; }
     if (macroChart) { macroChart.destroy(); macroChart = null; }
     document.getElementById('selected-day-meals').innerHTML = '';
+    if (waterHistoryUnsubscribe) { waterHistoryUnsubscribe(); waterHistoryUnsubscribe = null; }
+    if (waterUnsubscribe) { waterUnsubscribe(); waterUnsubscribe = null; }
     document.getElementById('saved-recipes').innerHTML = '';
     document.getElementById('weekly-history').innerHTML = '';
 }
@@ -805,6 +856,106 @@ function showFoodLookupDetails(food) {
     detailsContainer.classList.remove('hidden');
 }
 
+async function setWaterCount(newCount) {
+    if (newCount < 0 || isNaN(newCount)) return;
+
+    if (!userId || !isOnline) {
+        if (!isOnline) showToast("Sei offline. Il conteggio non verrà salvato.", true);
+        return;
+    }
+    const dateString = selectedDate.toISOString().split('T')[0];
+    const waterDocRef = doc(db, `users/${userId}/water`, dateString);
+    try {
+        await setDoc(waterDocRef, { count: newCount }, { merge: true });
+    } catch (error) {
+        console.error("Errore salvataggio acqua (setWaterCount):", error);
+        showToast("Errore nel salvare il conteggio dell'acqua.", true);
+    }
+}
+
+async function incrementWaterCount(amount) {
+    if (!userId || !isOnline) {
+        if (!isOnline) showToast("Sei offline. Il conteggio non verrà salvato.", true);
+        return;
+    }
+
+    const dateString = selectedDate.toISOString().split('T')[0];
+    const waterDocRef = doc(db, `users/${userId}/water`, dateString);
+    
+    try {
+        await runTransaction(db, async (transaction) => {
+            const waterDoc = await transaction.get(waterDocRef);
+            const currentCount = waterDoc.data()?.count || 0;
+            const newCount = currentCount + amount;
+            const finalCount = Math.max(0, newCount);
+
+            // Impedisce al conteggio di scendere sotto lo zero.
+            transaction.set(waterDocRef, { count: finalCount }, { merge: true });
+        });
+    } catch (e) {
+        console.error("Transazione acqua fallita: ", e);
+        showToast("Errore nell'aggiornare il conteggio dell'acqua.", true);
+    }
+}
+
+function listenToWaterData() {
+    if (waterUnsubscribe) {
+        waterUnsubscribe();
+    }
+    if (!userId) {
+        waterCount = 0;
+        renderWaterTracker();
+        return;
+    }
+
+    const dateString = selectedDate.toISOString().split('T')[0];
+    const waterDocRef = doc(db, `users/${userId}/water`, dateString);
+
+    waterUnsubscribe = onSnapshot(waterDocRef, (doc) => {
+        const oldCount = waterCount; // Salva il valore precedente
+        const data = doc.data();
+        const newCount = data?.count || 0;
+        waterCount = newCount; // Aggiorna il valore globale
+        renderWaterTracker();
+
+        // Mostra una notifica di congratulazioni solo quando si raggiunge l'obiettivo per la prima volta
+        const goal = nutritionGoals.water || 8;
+        if (newCount >= goal && oldCount < goal) {
+            showToast(`🎉 Congratulazioni! Hai raggiunto il tuo obiettivo di ${goal} bicchieri d'acqua!`);
+        }
+    }, (error) => {
+        console.error("Errore nel listener dell'acqua:", error);
+        waterCount = 0;
+        renderWaterTracker();
+    });
+}
+
+function listenToWaterHistory() {
+    if (waterHistoryUnsubscribe) {
+        waterHistoryUnsubscribe();
+    }
+    if (!userId) return;
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const dateString = thirtyDaysAgo.toISOString().split('T')[0];
+
+    const waterQuery = query(
+        collection(db, `users/${userId}/water`),
+        where(documentId(), '>=', dateString)
+    );
+
+    waterHistoryUnsubscribe = onSnapshot(waterQuery, (snapshot) => {
+        const newHistory = {};
+        snapshot.forEach(doc => {
+            newHistory[doc.id] = doc.data().count;
+        });
+        waterHistory = newHistory;
+        renderWeeklyHistory(); // Re-render the history table when data arrives/changes
+    }, (error) => {
+        console.error("Errore nel listener dello storico acqua:", error);
+    });
+}
 // ... (altre funzioni di UI come modali, form resets, grafici, etc.)
 // ... (tutte le altre funzioni da qui in poi)
 
@@ -824,6 +975,7 @@ function updateGoalsInputs() {
     document.getElementById('goal-carbs').value = nutritionGoals.carbs;
     document.getElementById('goal-fats').value = nutritionGoals.fats;
     document.getElementById('goal-fibers').value = nutritionGoals.fibers;
+    document.getElementById('goal-water').value = nutritionGoals.water;
 }
 
 async function saveAndCloseGoalsModal() {
@@ -832,8 +984,10 @@ async function saveAndCloseGoalsModal() {
     nutritionGoals.carbs = parseInt(document.getElementById('goal-carbs').value) || 250;
     nutritionGoals.fats = parseInt(document.getElementById('goal-fats').value) || 70;
     nutritionGoals.fibers = parseInt(document.getElementById('goal-fibers').value) || 30;
+    nutritionGoals.water = parseInt(document.getElementById('goal-water').value) || 8;
     await saveNutritionGoals();
     updateNutritionProgress();
+    renderWaterTracker();
     document.getElementById('goals-modal').classList.add('hidden');
     showToast('Obiettivi aggiornati con successo!');
 }
