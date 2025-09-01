@@ -1,7 +1,7 @@
 // Importa le funzioni necessarie da Firebase SDK
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // Configurazione Firebase dal tuo progetto
 const firebaseConfig = {
@@ -17,7 +17,8 @@ const firebaseConfig = {
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
 let app, auth, db;
 let userId = null;
-let foods = [];
+let currentSearchResults = [];
+let currentLookupResults = [];
 let selectedFood = null;
 let selectedDate = new Date();
 let allMeals = [];
@@ -192,7 +193,7 @@ function setupListeners() {
         // Seleziona alimento dalla ricerca pasto
         const searchItem = target.closest('.search-item');
         if (searchItem) {
-            selectedFood = foods.find(f => f.id === searchItem.dataset.foodId);
+            selectedFood = currentSearchResults.find(f => f.id === searchItem.dataset.foodId);
             if (selectedFood) {
                 document.getElementById('food-search').value = selectedFood.name;
                 document.getElementById('search-results').style.display = 'none';
@@ -203,7 +204,7 @@ function setupListeners() {
         // Seleziona alimento dalla ricerca nel database
         const lookupItem = target.closest('.lookup-item');
         if (lookupItem) {
-            const food = foods.find(f => f.id === lookupItem.dataset.foodId);
+            const food = currentLookupResults.find(f => f.id === lookupItem.dataset.foodId);
             if (food) {
                 document.getElementById('food-lookup-search').value = food.name;
                 showFoodLookupDetails(food);
@@ -263,13 +264,6 @@ function updateOnlineStatus(online) {
 async function loadInitialData() {
     if (!userId) return;
     try {
-        // Carica alimenti
-        const foodsCollection = collection(db, 'foods');
-        onSnapshot(foodsCollection, (snapshot) => {
-            foods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            foods.sort((a, b) => a.name.localeCompare(b.name));
-        });
-
         // Carica pasti (ultimi 30 giorni per i grafici)
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -377,7 +371,10 @@ async function addNewFood() {
     }
     
     try {
-        await addDoc(collection(db, 'foods'), { name, calories, proteins, carbs, fats, fibers });
+        await addDoc(collection(db, 'foods'), { 
+            name, calories, proteins, carbs, fats, fibers,
+            name_lowercase: name.toLowerCase() // Aggiunge il campo per la ricerca
+        });
         showToast(`${name} aggiunto al database!`);
         resetNewFoodForm();
     } catch (error) {
@@ -431,10 +428,17 @@ async function useRecipe(recipeId) {
     const mealType = document.getElementById('meal-type').value;
     const mealDate = getMealTimestamp(mealType);
 
+    showToast(`Aggiungo la ricetta "${recipe.name}"...`);
+
     for (const ingredient of recipe.ingredients) {
-        const food = foods.find(f => f.name.toLowerCase() === ingredient.name.toLowerCase());
-        if (food) {
-            // Destructure to remove 'id' and avoid overwriting the meal's document ID
+        // Cerca l'alimento nel database in tempo reale
+        const foodsCollection = collection(db, 'foods');
+        const q = query(foodsCollection, where('name_lowercase', '==', ingredient.name.toLowerCase()));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+            const foodDoc = querySnapshot.docs[0];
+            const food = { id: foodDoc.id, ...foodDoc.data() };
             const { id, ...foodData } = food;
             try {
                 await addDoc(collection(db, `users/${userId}/meals`), {
@@ -444,11 +448,12 @@ async function useRecipe(recipeId) {
                     date: Timestamp.fromDate(mealDate)
                 });
             } catch (error) {
-                console.error("Errore aggiunta ingrediente da ricetta:", error);
+                console.error(`Errore aggiunta ingrediente "${ingredient.name}":`, error);
             }
+        } else {
+            console.warn(`Ingrediente non trovato nel DB: ${ingredient.name}`);
         }
     }
-    showToast(`Ricetta "${recipe.name}" aggiunta al diario!`);
 }
 
 async function fetchFoodFromBarcode(barcode, callback) {
@@ -942,68 +947,46 @@ function updateCharts() {
 
 // --- Funzioni di ricerca ---
 
-function handleSearch(e) {
+async function handleSearch(e) {
     const searchTerm = e.target.value.toLowerCase();
     const resultsContainer = document.getElementById('search-results');
     
     if (searchTerm.length < 2) {
         resultsContainer.style.display = 'none';
+        currentSearchResults = [];
         return;
     }
 
-    // Dividi il termine di ricerca in parole singole (token)
-    const searchTokens = searchTerm.split(' ').filter(token => token.length > 0);
+    try {
+        const q = query(
+            collection(db, 'foods'), 
+            where('name_lowercase', '>=', searchTerm), 
+            where('name_lowercase', '<=', searchTerm + '\uf8ff'), 
+            orderBy('name_lowercase'),
+            limit(10)
+        );
+        const querySnapshot = await getDocs(q);
+        currentSearchResults = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // Filtra gli alimenti verificando che il nome contenga TUTTI i token di ricerca
-    const scoredFoods = foods.map(food => {
-        const foodNameLower = food.name.toLowerCase();
-        let score = 0;
-        let allTokensFound = true;
-
-        for (const token of searchTokens) {
-            const index = foodNameLower.indexOf(token);
-            if (index === -1) {
-                allTokensFound = false;
-                break;
-            }
-            // Priorità a match all'inizio della stringa
-            if (index === 0) {
-                score += 10;
-            } 
-            // Priorità a match all'inizio di una parola (dopo spazio o virgola)
-            else if ([' ', ','].includes(foodNameLower[index - 1])) {
-                score += 5;
-            } 
-            // Match base
-            else {
-                score += 1;
-            }
-        }
-
-        if (!allTokensFound) return { food, score: 0 };
-        return { food, score };
-    })
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-    const filteredFoods = scoredFoods.map(item => item.food).slice(0, 10);
-    if (filteredFoods.length > 0) {
-        resultsContainer.innerHTML = filteredFoods.map(food => `
+        if (currentSearchResults.length > 0) {
+            resultsContainer.innerHTML = currentSearchResults.map(food => `
             <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
                 <div class="font-medium text-slate-200">${food.name}</div>
                 <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
             </div>
         `).join('');
-        resultsContainer.style.display = 'block';
-    } else {
-        resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun alimento trovato.</div>`;
-        resultsContainer.style.display = 'block';
+            resultsContainer.style.display = 'block';
+        } else {
+            resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun alimento trovato.</div>`;
+            resultsContainer.style.display = 'block';
+        }
+    } catch (error) {
+        console.error("Errore ricerca alimento:", error);
+        showToast("Errore durante la ricerca.", true);
     }
 }
 
-// ... e così via per `handleFoodLookup`... (la logica è molto simile)
-
-function handleFoodLookup(e) {
+async function handleFoodLookup(e) {
     const searchTerm = e.target.value.toLowerCase();
     const resultsContainer = document.getElementById('food-lookup-results-list');
     const detailsContainer = document.getElementById('food-lookup-details');
@@ -1011,57 +994,37 @@ function handleFoodLookup(e) {
     if (searchTerm.length < 2) {
         resultsContainer.style.display = 'none';
         detailsContainer.classList.add('hidden');
+        currentLookupResults = [];
         return;
     }
 
-    // Dividi il termine di ricerca in parole singole (token)
-    const searchTokens = searchTerm.split(' ').filter(token => token.length > 0);
+    try {
+        const q = query(
+            collection(db, 'foods'), 
+            where('name_lowercase', '>=', searchTerm), 
+            where('name_lowercase', '<=', searchTerm + '\uf8ff'), 
+            orderBy('name_lowercase'),
+            limit(10)
+        );
+        const querySnapshot = await getDocs(q);
+        currentLookupResults = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // Filtra gli alimenti verificando che il nome contenga TUTTI i token di ricerca
-    const scoredFoods = foods.map(food => {
-        const foodNameLower = food.name.toLowerCase();
-        let score = 0;
-        let allTokensFound = true;
-
-        for (const token of searchTokens) {
-            const index = foodNameLower.indexOf(token);
-            if (index === -1) {
-                allTokensFound = false;
-                break;
-            }
-            // Priorità a match all'inizio della stringa
-            if (index === 0) {
-                score += 10;
-            }
-            // Priorità a match all'inizio di una parola (dopo spazio o virgola)
-            else if ([' ', ','].includes(foodNameLower[index - 1])) {
-                score += 5;
-            }
-            // Match base
-            else {
-                score += 1;
-            }
-        }
-
-        if (!allTokensFound) return { food, score: 0 };
-        return { food, score };
-    })
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-
-    const filteredFoods = scoredFoods.map(item => item.food).slice(0, 10);
-    if (filteredFoods.length > 0) {
-        resultsContainer.innerHTML = filteredFoods.map(food => `
+        if (currentLookupResults.length > 0) {
+            resultsContainer.innerHTML = currentLookupResults.map(food => `
             <div class="lookup-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
                 <div class="font-medium text-slate-200">${food.name}</div>
                 <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
             </div>
         `).join('');
-        resultsContainer.style.display = 'block';
-    } else {
-        resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun alimento trovato.</div>`;
-        resultsContainer.style.display = 'block';
-        detailsContainer.classList.add('hidden');
+            resultsContainer.style.display = 'block';
+        } else {
+            resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun alimento trovato.</div>`;
+            resultsContainer.style.display = 'block';
+            detailsContainer.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error("Errore ricerca alimento:", error);
+        showToast("Errore durante la ricerca.", true);
     }
 }
 
