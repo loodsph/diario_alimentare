@@ -2,17 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-// Configurazione Firebase dal tuo progetto
-const firebaseConfig = {
-  apiKey: "AIzaSyCCwhGg3hSQauEXmA1YKMgH60JQk9VNvXA",
-  authDomain: "diario-alimentare-4f07f.firebaseapp.com",
-  projectId: "diario-alimentare-4f07f",
-  storageBucket: "diario-alimentare-4f07f.appspot.com",
-  messagingSenderId: "904900489529",
-  appId: "1:904900489529:web:bb8d121f2a9a206c1538e8",
-  measurementId: "G-JYDET1ZW5K"
-};
+import { firebaseConfig } from './firebase-config.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
 let app, auth, db;
