@@ -2,6 +2,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { debounce, getDayBounds, formatDate, getMealTimestamp } from './modules/utils.js';
+import { showToast, triggerFlashAnimation } from './modules/uiHelpers.js';
 import { firebaseConfig } from './firebase-config.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
@@ -348,7 +350,7 @@ async function addMeal() {
         return showToast('Seleziona un alimento e inserisci una quantità valida.', true);
     }
 
-    const mealDate = getMealTimestamp(type);
+    const mealDate = getMealTimestamp(type, selectedDate);
 
     // Calcola il sortIndex per il nuovo pasto
     const { start, end } = getDayBounds(selectedDate);
@@ -462,11 +464,12 @@ async function useRecipe(recipeId) {
     if (!recipe) return showToast("Errore: Ricetta non trovata.", true);
 
     const mealType = document.getElementById('meal-type').value;
-    const mealDate = getMealTimestamp(mealType);
+    const mealDate = getMealTimestamp(mealType, selectedDate);
 
     showToast(`Aggiungo la ricetta "${recipe.name}"...`);
 
-    for (const ingredient of recipe.ingredients) {
+    const batch = writeBatch(db);
+    const mealPromises = recipe.ingredients.map(async (ingredient) => {
         // Cerca l'alimento nel database in tempo reale
         const foodsCollection = collection(db, 'foods');
         const q = query(foodsCollection, where('name_lowercase', '==', ingredient.name.toLowerCase()));
@@ -475,21 +478,22 @@ async function useRecipe(recipeId) {
         if (!querySnapshot.empty) {
             const foodDoc = querySnapshot.docs[0];
             const food = { id: foodDoc.id, ...foodDoc.data() };
-            const { id, ...foodData } = food;
-            try {
-                await addDoc(collection(db, `users/${userId}/meals`), {
-                    ...foodData,
-                    quantity: ingredient.quantity,
-                    type: mealType,
-                    date: Timestamp.fromDate(mealDate)
-                });
-            } catch (error) {
-                console.error(`Errore aggiunta ingrediente "${ingredient.name}":`, error);
-            }
+            const { id, ...foodData } = food; // Rimuove l'ID dell'alimento per non confonderlo con l'ID del pasto
+            const newMealRef = doc(collection(db, `users/${userId}/meals`)); // Crea un riferimento per il nuovo pasto
+            batch.set(newMealRef, {
+                ...foodData,
+                quantity: ingredient.quantity,
+                type: mealType,
+                date: Timestamp.fromDate(mealDate)
+            });
         } else {
             console.warn(`Ingrediente non trovato nel DB: ${ingredient.name}`);
+            showToast(`Ingrediente "${ingredient.name}" non trovato nel database.`, true);
         }
-    }
+    });
+    await Promise.all(mealPromises);
+    await batch.commit();
+    showToast(`Ricetta "${recipe.name}" aggiunta al diario!`);
 }
 
 async function fetchFoodFromBarcode(barcode, callback) {
@@ -827,25 +831,6 @@ async function updateMealOrder(updates) {
 
 // --- FUNZIONI UTILITY E HELPERS ---
 
-function debounce(func, delay) {
-    let timeout;
-    return function(...args) {
-        const context = this;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(context, args), delay);
-    };
-}
-
-function triggerFlashAnimation(elementId) {
-    const element = document.getElementById(elementId);
-    if (element) {
-        element.classList.add('flash-update');
-        element.addEventListener('animationend', () => {
-            element.classList.remove('flash-update');
-        }, { once: true }); // 'once: true' rimuove il listener dopo la prima esecuzione
-    }
-}
-
 function changeDay(offset) {
     if (offset === 0) { // Vai a oggi
         selectedDate = new Date();
@@ -854,46 +839,6 @@ function changeDay(offset) {
     }
     listenToWaterData();
     updateAllUI();
-}
-
-function getDayBounds(date) {
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(date);
-    end.setHours(23, 59, 59, 999);
-    return { start, end };
-}
-
-function formatDate(date) {
-    return date.toLocaleDateString('it-IT', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
-}
-
-function showToast(message, isError = false) {
-    const toast = document.getElementById('toast');
-    const iconContainer = toast.querySelector('div');
-    const icon = toast.querySelector('i');
-    const text = toast.querySelector('span');
-
-    text.textContent = message;
-
-    if (isError) {
-        iconContainer.className = 'w-8 h-8 rounded-full bg-gradient-to-r from-red-500 to-pink-500 flex items-center justify-center';
-        icon.className = 'fas fa-exclamation-circle text-white text-sm';
-    } else {
-        iconContainer.className = 'w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center';
-        icon.className = 'fas fa-check text-white text-sm';
-    }
-
-    toast.classList.remove('opacity-0', 'translate-y-10');
-
-    setTimeout(() => {
-        toast.classList.add('opacity-0', 'translate-y-10');
-    }, 3000);
 }
 
 function resetAppData() {
@@ -905,18 +850,6 @@ function resetAppData() {
     if (waterUnsubscribe) { waterUnsubscribe(); waterUnsubscribe = null; }
     document.getElementById('saved-recipes').innerHTML = '';
     document.getElementById('weekly-history').innerHTML = '';
-}
-
-function getMealTimestamp(type) {
-    let mealDate = new Date(selectedDate);
-    if (selectedDate.toDateString() === new Date().toDateString()) {
-        return new Date(); // Ora corrente se è oggi
-    }
-    const defaultTimes = {
-        '🌅 Colazione': 8, '🍽️ Pranzo': 13, '🌙 Cena': 20, '🍪 Spuntino': 16
-    };
-    mealDate.setHours(defaultTimes[type] || 12, 0, 0, 0);
-    return mealDate;
 }
 
 function showFoodLookupDetails(food) {
