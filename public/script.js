@@ -1,7 +1,7 @@
 // Importa le funzioni necessarie da Firebase SDK
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { firebaseConfig } from './firebase-config.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
@@ -349,16 +349,29 @@ async function addMeal() {
     }
 
     const mealDate = getMealTimestamp(type);
+
+    // Calcola il sortIndex per il nuovo pasto
+    const { start, end } = getDayBounds(selectedDate);
+    const mealsOnDayQuery = query(
+        collection(db, `users/${userId}/meals`),
+        where('date', '>=', Timestamp.fromDate(start)),
+        where('date', '<=', Timestamp.fromDate(end))
+    );
+    const querySnapshot = await getDocs(mealsOnDayQuery);
+    const maxIndex = querySnapshot.docs.reduce((max, doc) => {
+        const currentIdx = doc.data().sortIndex;
+        return (currentIdx !== undefined && currentIdx > max) ? currentIdx : max;
+    }, -1);
+    const sortIndex = maxIndex + 1;
     
     // Destructure to remove 'id' and avoid overwriting the meal's document ID
     const { id, ...foodData } = selectedFood;
 
     try {
         await addDoc(collection(db, `users/${userId}/meals`), {
-            ...foodData,
-            quantity,
-            type,
-            date: Timestamp.fromDate(mealDate)
+            ...foodData, quantity, type,
+            date: Timestamp.fromDate(mealDate),
+            sortIndex: sortIndex
         });
         showToast('Pasto aggiunto al diario!');
         resetAddMealForm();
@@ -572,6 +585,9 @@ function renderSelectedDayMeals() {
         let mealsHTML = '';
 
         if (meals.length > 0) {
+            // Ordina i pasti in base al loro indice di ordinamento
+            meals.sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
+
             mealsHTML = meals.map(meal => {
                 const calculated = {
                     calories: ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100),
@@ -582,7 +598,7 @@ function renderSelectedDayMeals() {
                 };
                 Object.keys(categoryTotals).forEach(key => categoryTotals[key] += calculated[key]);
                 return `
-                <div class="meal-item">
+                <div class="meal-item" data-id="${meal.id}">
                     <div class="flex justify-between items-center">
                         <div>
                             <p class="font-medium text-slate-200">${meal.name} (${Number(meal.quantity) || 0}g)</p>
@@ -608,10 +624,11 @@ function renderSelectedDayMeals() {
                     Cal: ${categoryTotals.calories.toFixed(0)} | P: ${categoryTotals.proteins.toFixed(1)}g | C: ${categoryTotals.carbs.toFixed(1)}g | G: ${categoryTotals.fats.toFixed(1)}g
                 </div>
             </div>
-            <div class="p-4 space-y-3">${mealsHTML}</div>
+            <div class="p-4 space-y-3 meal-list-container">${mealsHTML}</div>
         </div>`;
     });
 
+    initSortableLists();
     updateNutritionProgress();
 }
 
@@ -739,6 +756,7 @@ function renderWaterTracker() {
     // Aggiorna la barra di progresso nella sezione Obiettivi
     const waterProgressText = document.getElementById('water-progress-text');
     const waterProgressBar = document.getElementById('water-progress');
+    const waterTotalMl = document.getElementById('water-total-ml');
     
     if (waterProgressText && waterProgressBar) {
         const goal = nutritionGoals.water || 8;
@@ -746,9 +764,65 @@ function renderWaterTracker() {
         
         waterProgressBar.style.width = `${percent}%`;
         waterProgressText.textContent = `${waterCount}/${goal} bicchieri`;
+
+        if (waterTotalMl) {
+            const totalMl = waterCount * 200;
+            waterTotalMl.textContent = `(${totalMl}mL)`;
+        }
     }
 }
 
+function initSortableLists() {
+    const mealLists = document.querySelectorAll('.meal-list-container');
+    mealLists.forEach(list => {
+        // Previene la ri-inizializzazione se l'istanza esiste già
+        if (list.sortableInstance) {
+            list.sortableInstance.destroy();
+        }
+
+        // Crea una nuova istanza di Sortable
+        list.sortableInstance = new Sortable(list, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            onEnd: async (evt) => {
+                // Ottiene gli elementi nella loro nuova posizione
+                const items = Array.from(evt.from.children);
+
+                // Crea un array di aggiornamenti con ID e nuovo indice
+                const updates = items.map((item, index) => ({
+                    id: item.dataset.id,
+                    newIndex: index
+                })).filter(u => u.id);
+
+                if (updates.length > 0) {
+                    await updateMealOrder(updates);
+                }
+            }
+        });
+    });
+}
+
+async function updateMealOrder(updates) {
+    if (!userId || !isOnline) {
+        showToast("Sei offline. Impossibile riordinare.", true);
+        renderSelectedDayMeals(); // Ripristina l'ordine visivo
+        return;
+    }
+
+    try {
+        const batch = writeBatch(db);
+        updates.forEach(update => {
+            const mealRef = doc(db, `users/${userId}/meals`, update.id);
+            batch.update(mealRef, { sortIndex: update.newIndex });
+        });
+        await batch.commit();
+        showToast('Ordine dei pasti aggiornato!');
+    } catch (error) {
+        console.error("Errore durante l'aggiornamento dell'ordine dei pasti:", error);
+        showToast("Errore durante il riordino.", true);
+    }
+}
 
 
 // --- FUNZIONI UTILITY E HELPERS ---

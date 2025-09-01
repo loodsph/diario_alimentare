@@ -580,3 +580,15 @@ select.input-modern {
     transform: scale(1.1);
     text-shadow: 0 0 10px rgba(14, 165, 233, 0.5);
 }
+
+/* Stili per il Drag and Drop */
+.sortable-ghost {
+    opacity: 0.4;
+    background: #334155; /* slate-700 */
+}
+
+.sortable-chosen {
+    cursor: grabbing;
+    transform: scale(1.02);
+    box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.2);
+}
