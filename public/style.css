@@ -543,3 +543,26 @@ select.input-modern {
 .offline-indicator.show {
     display: block;
 }
+
+/* Animazione per l'aggiornamento dei totali nutrizionali */
+@keyframes flash-update-kf {
+    0% {
+        transform: scale(1);
+        color: white;
+        text-shadow: none;
+    }
+    50% {
+        transform: scale(1.2);
+        color: #a78bfa; /* Viola chiaro */
+        text-shadow: 0 0 15px rgba(167, 139, 250, 0.7);
+    }
+    100% {
+        transform: scale(1);
+        color: white;
+        text-shadow: none;
+    }
+}
+
+.flash-update {
+    animation: flash-update-kf 0.7s ease-in-out;
+}

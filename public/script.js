@@ -677,17 +677,22 @@ function updateNutritionProgress() {
     }, { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 });
     
     // Aggiorna i totali principali
-    document.getElementById('total-calories').textContent = totals.calories.toFixed(0);
-    document.getElementById('total-proteins').textContent = totals.proteins.toFixed(1);
-    document.getElementById('total-carbs').textContent = totals.carbs.toFixed(1);
-    document.getElementById('total-fats').textContent = totals.fats.toFixed(1);
-    document.getElementById('total-fibers').textContent = totals.fibers.toFixed(1);
+    const updateAndAnimateTotal = (id, value, decimals = 0) => {
+        document.getElementById(id).textContent = value.toFixed(decimals);
+        triggerFlashAnimation(id);
+    };
+
+    updateAndAnimateTotal('total-calories', totals.calories, 0);
+    updateAndAnimateTotal('total-proteins', totals.proteins, 1);
+    updateAndAnimateTotal('total-carbs', totals.carbs, 1);
+    updateAndAnimateTotal('total-fats', totals.fats, 1);
+    updateAndAnimateTotal('total-fibers', totals.fibers, 1);
 
     // Aggiorna le barre di progresso
     const updateProgress = (type, value) => {
         const percent = Math.min(100, (value / nutritionGoals[type]) * 100);
         document.getElementById(`${type}-progress`).style.width = `${percent}%`;
-        document.getElementById(`${type}-progress-text`).textContent = `${value.toFixed(type === 'calories' ? 0 : 1)}${type !== 'calories' ? 'g' : ''}/${nutritionGoals[type]}${type !== 'calories' ? 'g' : ''}`;
+        document.getElementById(`${type}-progress-text`).textContent = `${value.toFixed(type === 'calories' ? 0 : 1)}${type !== 'calories' ? 'g' : ''} / ${nutritionGoals[type]}${type !== 'calories' ? 'g' : ''}`;
     };
 
     updateProgress('calories', totals.calories);
@@ -707,6 +712,16 @@ function debounce(func, delay) {
         clearTimeout(timeout);
         timeout = setTimeout(() => func.apply(context, args), delay);
     };
+}
+
+function triggerFlashAnimation(elementId) {
+    const element = document.getElementById(elementId);
+    if (element) {
+        element.classList.add('flash-update');
+        element.addEventListener('animationend', () => {
+            element.classList.remove('flash-update');
+        }, { once: true }); // 'once: true' rimuove il listener dopo la prima esecuzione
+    }
 }
 
 function changeDay(offset) {
