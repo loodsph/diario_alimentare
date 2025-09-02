@@ -101,11 +101,21 @@
         // Importa le funzioni necessarie da Firebase SDK
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore, collection, query, where, getDocs, writeBatch, doc, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-        import { firebaseConfig } from './firebase-config.js';
+        import { getFirestore, collection, query, where, getDocs, setDoc, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // --- 1. INCOLLA QUI LA TUA CONFIGURAZIONE FIREBASE da firebase-config.js ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCCwhGg3hSQauEXmA1YKMgH60JQk9VNvXA",
+            authDomain: "diario-alimentare-4f07f.firebaseapp.com",
+            projectId: "diario-alimentare-4f07f",
+            storageBucket: "diario-alimentare-4f07f.appspot.com",
+            messagingSenderId: "904900489529",
+            appId: "1:904900489529:web:bb8d121f2a9a206c1538e8",
+            measurementId: "G-JYDET1ZW5K"
+        };
 
         // Controllo di sicurezza per la configurazione
-        if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey.includes("...")) {
+        if (!firebaseConfig || !firebaseConfig.apiKey || firebaseConfig.apiKey === "...") {
             document.body.innerHTML = `
                 <div class="container" style="border-color: #ef4444;">
                     <h1 style="color: #f87171;"><i class="fas fa-exclamation-triangle"></i> Errore di Configurazione</h1>
@@ -193,26 +203,23 @@
 
             let updatedCount = 0, notFoundCount = 0;
             const foodsCollection = collection(db, 'foods');
-            const chunkSize = 450; // Processa in blocchi per non superare il limite di 500 operazioni per batch
+            const chunkSize = 50; // Processa 50 righe alla volta per evitare sovraccarichi
 
             for (let i = 0; i < dataToUpdate.length; i += chunkSize) {
                 const chunk = dataToUpdate.slice(i, i + chunkSize);
-                const batch = writeBatch(db);
-                let foundInChunk = 0;
-
-                await Promise.all(chunk.map(async (item) => {
+                const promises = chunk.map(async (item) => {
                     const q = query(foodsCollection, where('name_lowercase', '==', item.name.toLowerCase()), limit(1));
                     const querySnapshot = await getDocs(q);
                     if (!querySnapshot.empty) {
-                        const docRef = doc(db, "foods", querySnapshot.docs[0].id);
-                        batch.update(docRef, { fibers: item.fibers });
-                        foundInChunk++;
+                        const docToUpdate = querySnapshot.docs[0];
+                        await setDoc(docToUpdate.ref, { fibers: item.fibers }, { merge: true });
+                        updatedCount++;
                     } else {
                         notFoundCount++;
                     }
-                }));
-                await batch.commit();
-                updatedCount += foundInChunk;
+                });
+                
+                await Promise.all(promises);
                 feedbackEl.innerHTML = `Elaborati ${i + chunk.length} / ${dataToUpdate.length} (Aggiornati: ${updatedCount}, Non trovati: ${notFoundCount})`;
             }
 

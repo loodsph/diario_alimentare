@@ -31,34 +31,30 @@
         </div>
     </div>
     
-    <div id="login-screen" class="fixed inset-0 bg-slate-900 bg-opacity-80 z-40 hidden">
-        <div class="flex items-center justify-center h-full w-full">
-            <div class="text-center p-8 glass-card rounded-2xl max-w-sm w-full mx-4">
-                <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 mb-4">NutriTrack</h1>
-                <p class="text-slate-300 mb-8">Accedi per iniziare a tracciare la tua alimentazione.</p>
-                <button id="login-btn" class="btn-modern btn-primary w-full text-white py-3 rounded-full font-semibold text-lg flex items-center justify-center space-x-3">
-                    <i class="fab fa-google" aria-hidden="true"></i>
-                    <span>Accedi con Google</span>
-                </button>
-            </div>
+    <div id="login-screen" class="fixed inset-0 bg-slate-900 bg-opacity-80 flex items-center justify-center z-40 hidden">
+        <div class="text-center p-8 glass-card rounded-2xl max-w-sm w-full mx-4">
+            <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 mb-4">NutriTrack</h1>
+            <p class="text-slate-300 mb-8">Accedi per iniziare a tracciare la tua alimentazione.</p>
+            <button id="login-btn" class="btn-modern btn-primary w-full text-white py-3 rounded-full font-semibold text-lg flex items-center justify-center space-x-3">
+                <i class="fab fa-google" aria-hidden="true"></i>
+                <span>Accedi con Google</span>
+            </button>
         </div>
     </div>
     
     <div id="app" class="container mx-auto p-4 max-w-7xl hidden">
-        <div id="top-bar" class="hidden mb-8">
-            <div class="flex items-center justify-between gap-4 p-4 glass-card rounded-2xl">
-                <div id="user-info" class="flex items-center space-x-4 min-w-0">
-                    <img id="user-photo" src="" alt="Foto profilo utente" class="w-12 h-12 rounded-full border-2 border-indigo-500 flex-shrink-0">
-                    <div class="min-w-0">
-                        <p class="font-semibold text-slate-200 truncate" id="user-name"></p>
-                        <p class="text-sm text-slate-400 truncate" id="user-email"></p>
-                    </div>
+        <div id="top-bar" class="hidden flex items-center justify-between gap-4 mb-8 p-4 glass-card rounded-2xl">
+            <div id="user-info" class="flex items-center space-x-4 min-w-0">
+                <img id="user-photo" src="" alt="Foto profilo utente" class="w-12 h-12 rounded-full border-2 border-indigo-500 flex-shrink-0">
+                <div class="min-w-0">
+                    <p class="font-semibold text-slate-200 truncate" id="user-name"></p>
+                    <p class="text-sm text-slate-400 truncate" id="user-email"></p>
                 </div>
-                <button id="logout-btn" class="btn-modern btn-danger md:px-5 px-3 py-2 rounded-full font-medium flex items-center md:space-x-2 flex-shrink-0" aria-label="Esci">
-                    <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
-                    <span class="hidden md:inline">Esci</span>
-                </button>
             </div>
+            <button id="logout-btn" class="btn-modern btn-danger md:px-5 px-3 py-2 rounded-full font-medium flex items-center md:space-x-2 flex-shrink-0" aria-label="Esci">
+                <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
+                <span class="hidden md:inline">Esci</span>
+            </button>
         </div>
         
         <header class="main-header">
@@ -107,13 +103,11 @@
                     <div>
                         <label for="food-search" class="block text-sm font-semibold text-slate-300 mb-3">Cerca Alimento o Scansiona</label>
                         <div id="food-search-wrapper" class="relative">
-                            <input type="text" id="food-search" class="search-input w-full pl-12 pr-16" placeholder="Cerca un alimento..." autocomplete="off">
+                            <input type="text" id="food-search" class="search-input w-full pl-12" placeholder="Cerca un alimento..." autocomplete="off">
                             <i id="food-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none transition-opacity duration-300"></i>
-                            <div class="absolute inset-y-0 right-3 flex items-center">
-                                <button id="scan-barcode-btn" type="button" class="btn-modern btn-primary !py-2 !px-3 flex items-center rounded-xl">
-                                    <i class="fas fa-barcode"></i>
-                                </button>
-                            </div>
+                            <button id="scan-barcode-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3">
+                                <i class="fas fa-barcode"></i>
+                            </button>
                             <div id="search-results" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden"></div>
                         </div>
                     </div>
@@ -418,12 +412,10 @@
                     <div class="glass-card p-8 rounded-3xl mt-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             <div class="lg:col-span-3 relative">
-                                 <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-16" aria-label="Nome alimento">
-                                 <div class="absolute inset-y-0 right-3 flex items-center">
-                                     <button id="scan-barcode-for-new-food-btn" type="button" class="btn-modern btn-primary !py-2 !px-3 flex items-center rounded-xl" aria-label="Scansiona codice a barre per nuovo alimento">
-                                        <i class="fas fa-barcode"></i>
-                                    </button>
-                                 </div>
+                                 <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-12" aria-label="Nome alimento">
+                                 <button id="scan-barcode-for-new-food-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
+                                    <i class="fas fa-barcode"></i>
+                                </button>
                             </div>
                             <input type="number" id="new-food-calories" class="input-modern" placeholder="Calorie (per 100g)">
                             <input type="number" id="new-food-proteins" class="input-modern" placeholder="Proteine (g)">
@@ -479,65 +471,62 @@
         <span class="font-medium text-slate-100">Messaggio di notifica</span>
     </div>
     
-    <div id="goals-modal" class="modal fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div class="flex items-center justify-center h-full w-full">
-            <div class="modal-content p-8 max-w-md w-full mx-4">
-                <h3 id="modal-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Obiettivi</h3>
-                <div class="space-y-4">
-                    <div>
-                        <label for="goal-calories" class="block text-sm font-medium text-slate-300 mb-2">Calorie</label>
-                        <input type="number" id="goal-calories" class="input-modern w-full" placeholder="es. 2000">
-                    </div>
-                    <div>
-                        <label for="goal-proteins" class="block text-sm font-medium text-slate-300 mb-2">Proteine (g)</label>
-                        <input type="number" id="goal-proteins" class="input-modern w-full" placeholder="es. 150">
-                    </div>
-                    <div>
-                        <label for="goal-carbs" class="block text-sm font-medium text-slate-300 mb-2">Carboidrati (g)</label>
-                        <input type="number" id="goal-carbs" class="input-modern w-full" placeholder="es. 250">
-                    </div>
-                    <div>
-                        <label for="goal-fats" class="block text-sm font-medium text-slate-300 mb-2">Grassi (g)</label>
-                        <input type="number" id="goal-fats" class="input-modern w-full" placeholder="es. 70">
-                    </div>
-                    <div>
-                        <label for="goal-fibers" class="block text-sm font-medium text-slate-300 mb-2">Fibre (g)</label>
-                        <input type="number" id="goal-fibers" class="input-modern w-full" placeholder="es. 30">
-                    </div>
-                    <div>
-                        <label for="goal-water" class="block text-sm font-medium text-slate-300 mb-2">Bicchieri d'acqua (~200mL)</label>
-                        <input type="number" id="goal-water" class="input-modern w-full" placeholder="es. 8">
-                    </div>
+    <div id="goals-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-content p-8 max-w-md w-full mx-4">
+            <h3 id="modal-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Obiettivi</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="goal-calories" class="block text-sm font-medium text-slate-300 mb-2">Calorie</label>
+                    <input type="number" id="goal-calories" class="input-modern w-full" placeholder="es. 2000">
                 </div>
-                <div class="flex gap-4 mt-8">
-                    <button id="cancel-goals-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
-                    <button id="save-goals-btn" class="btn-modern btn-primary flex-1">Salva</button>
+                <div>
+                    <label for="goal-proteins" class="block text-sm font-medium text-slate-300 mb-2">Proteine (g)</label>
+                    <input type="number" id="goal-proteins" class="input-modern w-full" placeholder="es. 150">
                 </div>
+                <div>
+                    <label for="goal-carbs" class="block text-sm font-medium text-slate-300 mb-2">Carboidrati (g)</label>
+                    <input type="number" id="goal-carbs" class="input-modern w-full" placeholder="es. 250">
+                </div>
+                <div>
+                    <label for="goal-fats" class="block text-sm font-medium text-slate-300 mb-2">Grassi (g)</label>
+                    <input type="number" id="goal-fats" class="input-modern w-full" placeholder="es. 70">
+                </div>
+                <div>
+                    <label for="goal-fibers" class="block text-sm font-medium text-slate-300 mb-2">Fibre (g)</label>
+                    <input type="number" id="goal-fibers" class="input-modern w-full" placeholder="es. 30">
+                </div>
+                <div>
+                    <label for="goal-water" class="block text-sm font-medium text-slate-300 mb-2">Bicchieri d'acqua (~200mL)</label>
+                    <input type="number" id="goal-water" class="input-modern w-full" placeholder="es. 8">
+                </div>
+            </div>
+            <div class="flex gap-4 mt-8">
+                <button id="cancel-goals-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
+                <button id="save-goals-btn" class="btn-modern btn-primary flex-1">Salva</button>
             </div>
         </div>
     </div>
     
-    <div id="scanner-modal" class="modal fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
-        <div class="flex items-center justify-center h-full w-full">
-            <div class="modal-content p-8 max-w-md w-full mx-4">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 id="scanner-title" class="text-2xl font-bold text-white">Scansiona un codice a barre</h3>
-                    <button id="close-scanner-btn" class="text-white hover:text-slate-300" aria-label="Chiudi scanner">
-                        <i class="fas fa-times text-2xl"></i>
-                    </button>
+    <div id="scanner-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
+        <div class="modal-content p-8 max-w-md w-full mx-4">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="scanner-title" class="text-2xl font-bold text-white">Scansiona un codice a barre</h3>
+                <button id="close-scanner-btn" class="text-white hover:text-slate-300" aria-label="Chiudi scanner">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            <div class="text-center">
+                <div id="scanner-feedback" class="text-slate-300 mb-4">
+                    Elaborazione dell'immagine...
                 </div>
-                <div class="text-center">
-                    <div id="scanner-feedback" class="text-slate-300 mb-4">
-                        Elaborazione dell'immagine...
-                    </div>
-                    <div id="scanner-container" class="hidden"></div>
-                </div>
+                 <div id="scanner-container" class="hidden"></div>
             </div>
         </div>
     </div>
     
-    <input type="file" id="barcode-file-input" accept="image/*" capture="environment" class="hidden">
+    <input type="file" id="barcode-file-input" accept="image/*" capture class="hidden">
     
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>

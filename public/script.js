@@ -17,8 +17,8 @@ let selectedDate = new Date();
 let allMeals = [];
 let recipes = [];
 let isOnline = navigator.onLine;
-let waterCount = 0;
 let onDecodeCallback = null;
+let waterCount = 0;
 let waterUnsubscribe = null;
 let waterHistory = {}; // e.g., { '2024-05-24': 8, '2024-05-23': 6 }
 let waterHistoryUnsubscribe = null;
@@ -39,62 +39,52 @@ window.onload = () => {
     auth = getAuth(app);
     db = getFirestore(app);
     setupListeners();
-    onAuthStateChanged(auth, handleAuthStateChange);
+
+    onAuthStateChanged(auth, async (user) => {
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loginScreen = document.getElementById('login-screen');
+        const appContainer = document.getElementById('app');
+        if (user) {
+            try {
+                userId = user.uid;
+                loginScreen.classList.add('hidden');
+                loadingOverlay.classList.remove('hidden');
+                
+                updateUserUI(user);
+                await loadNutritionGoals();
+                listenToWaterData();
+                listenToWaterHistory();
+                await loadInitialData();
+                
+                updateDateDisplay();
+                initCharts(
+                    document.getElementById('calorie-chart').getContext('2d'),
+                    document.getElementById('macro-chart').getContext('2d')
+                );
+                updateCharts(allMeals, selectedDate);
+
+                appContainer.classList.remove('hidden');
+            } catch (error) {
+                console.error("Errore critico durante l'inizializzazione:", error);
+                showToast("Errore durante il caricamento dell'app.", true);
+            } finally {
+                loadingOverlay.classList.add('hidden');
+            }
+        } else {
+            userId = null;
+            updateUserUI(null);
+            appContainer.classList.add('hidden');
+            loginScreen.classList.remove('hidden');
+            loadingOverlay.classList.add('hidden');
+            if (waterUnsubscribe) waterUnsubscribe();
+            if (waterHistoryUnsubscribe) waterHistoryUnsubscribe();
+            waterCount = 0;
+            waterHistory = {};
+            renderWaterTracker();
+            resetAppData();
+        }
+    });
 };
-
-async function handleAuthStateChange(user) {
-    const loadingOverlay = document.getElementById('loading-overlay');
-    const loginScreen = document.getElementById('login-screen');
-    const appContainer = document.getElementById('app');
-
-    if (user) {
-        await handleUserAuthenticated(user, loginScreen, appContainer, loadingOverlay);
-    } else {
-        handleUserSignedOut(loginScreen, appContainer, loadingOverlay);
-    }
-}
-
-async function handleUserAuthenticated(user, loginScreen, appContainer, loadingOverlay) {
-    try {
-        userId = user.uid;
-        loginScreen.classList.add('hidden');
-        loadingOverlay.classList.remove('hidden');
-        
-        updateUserUI(user);
-        await loadNutritionGoals();
-        listenToWaterData();
-        listenToWaterHistory();
-        await loadInitialData();
-        
-        updateDateDisplay();
-        initCharts(
-            document.getElementById('calorie-chart').getContext('2d'),
-            document.getElementById('macro-chart').getContext('2d')
-        );
-        updateCharts(allMeals, selectedDate);
-
-        appContainer.classList.remove('hidden');
-    } catch (error) {
-        console.error("Errore critico durante l'inizializzazione:", error);
-        showToast("Errore durante il caricamento dell'app.", true);
-    } finally {
-        loadingOverlay.classList.add('hidden');
-    }
-}
-
-function handleUserSignedOut(loginScreen, appContainer, loadingOverlay) {
-    userId = null;
-    updateUserUI(null);
-    appContainer.classList.add('hidden');
-    loginScreen.classList.remove('hidden');
-    loadingOverlay.classList.add('hidden');
-    if (waterUnsubscribe) waterUnsubscribe();
-    if (waterHistoryUnsubscribe) waterHistoryUnsubscribe();
-    waterCount = 0;
-    waterHistory = {};
-    renderWaterTracker();
-    resetAppData();
-}
 
 // --- GESTIONE EVENTI ---
 
@@ -129,14 +119,8 @@ function setupListeners() {
     document.getElementById('logout-btn').addEventListener('click', logout);
 
     // Scanner
-    document.getElementById('scan-barcode-btn').addEventListener('click', () => startScanner(async (barcode) => {
-        const foodData = await fetchFoodFromBarcode(barcode);
-        populateMealForm(foodData);
-    }));
-    document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => startScanner(async (barcode) => {
-        const foodData = await fetchFoodFromBarcode(barcode);
-        populateNewFoodForm(foodData);
-    }));
+    document.getElementById('scan-barcode-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateMealForm)));
+    document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm)));
     document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
     document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
 
@@ -563,38 +547,33 @@ async function useRecipe(recipeId) {
     }
 }
 
-async function fetchFoodFromBarcode(barcode) {
+async function fetchFoodFromBarcode(barcode, callback) {
+    showToast('Ricerca prodotto in corso...');
     const url = `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`;
     
     try {
         const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error('Prodotto non trovato nel database di Open Food Facts.');
-        }
+        if (!response.ok) throw new Error('Prodotto non trovato.');
         
         const data = await response.json();
         if (data.status !== 1 || !data.product) {
-            throw new Error('Dati del prodotto non validi o incompleti da Open Food Facts.');
+            return showToast('Prodotto non trovato o dati incompleti.', true);
         }
         
         const { product_name, nutriments } = data.product;
-
-        // Helper per analizzare in modo sicuro i valori, che possono essere stringhe o mancanti
-        const parse = (val) => parseFloat(val) || 0;
-
-        return {
+        const foodData = {
             name: product_name || 'Nome non disponibile',
-            // Prova a ottenere le calorie in kcal, altrimenti converti da kJ
-            calories: parse(nutriments['energy-kcal_100g']) || parse(nutriments.energy_100g / 4.184),
-            proteins: parse(nutriments.proteins_100g),
-            carbs: parse(nutriments.carbohydrates_100g),
-            fats: parse(nutriments.fat_100g),
-            fibers: parse(nutriments.fiber_100g)
+            calories: nutriments['energy-kcal_100g'] || (nutriments.energy_100g / 4.184) || 0,
+            proteins: nutriments.proteins_100g || 0,
+            carbs: nutriments.carbohydrates_100g || 0,
+            fats: nutriments.fat_100g || 0,
+            fibers: nutriments.fiber_100g || 0
         };
+        
+        callback(foodData);
     } catch (error) {
         console.error('Errore API Open Food Facts:', error);
-        // Rilancia un errore più descrittivo per essere gestito dal chiamante
-        throw new Error(error.message || 'Errore di comunicazione con Open Food Facts.');
+        showToast(error.message, true);
     }
 }
 
@@ -651,11 +630,12 @@ function renderSelectedDayMeals() {
     const container = document.getElementById('selected-day-meals');
     const { start, end } = getDayBounds(selectedDate);
     const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
+    container.innerHTML = '';
 
     const mealsByCategory = { '🌅 Colazione': [], '🍽️ Pranzo': [], '🌙 Cena': [], '🍪 Spuntino': [] };
     dayMeals.forEach(meal => mealsByCategory[meal.type]?.push(meal));
 
-    const finalHTML = Object.entries(mealsByCategory).map(([categoryName, meals]) => {
+    Object.entries(mealsByCategory).forEach(([categoryName, meals]) => {
         const categoryTotals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
         let mealsHTML = '';
 
@@ -664,13 +644,12 @@ function renderSelectedDayMeals() {
             meals.sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
 
             mealsHTML = meals.map(meal => {
-                const ratio = (Number(meal.quantity) || 0) / 100;
                 const calculated = {
-                    calories: (Number(meal.calories) || 0) * ratio,
-                    proteins: (Number(meal.proteins) || 0) * ratio,
-                    carbs: (Number(meal.carbs) || 0) * ratio,
-                    fats: (Number(meal.fats) || 0) * ratio,
-                    fibers: (Number(meal.fibers) || 0) * ratio
+                    calories: ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100),
+                    proteins: ((Number(meal.proteins) || 0) * (Number(meal.quantity) || 0) / 100),
+                    carbs: ((Number(meal.carbs) || 0) * (Number(meal.quantity) || 0) / 100),
+                    fats: ((Number(meal.fats) || 0) * (Number(meal.quantity) || 0) / 100),
+                    fibers: ((Number(meal.fibers) || 0) * (Number(meal.quantity) || 0) / 100)
                 };
                 Object.keys(categoryTotals).forEach(key => categoryTotals[key] += calculated[key]);
                 return `
@@ -692,7 +671,7 @@ function renderSelectedDayMeals() {
             mealsHTML = `<div class="text-center text-slate-500 italic py-4">Nessun pasto registrato</div>`;
         }
 
-        return `
+        container.innerHTML += `
         <div class="meal-category">
             <div class="meal-category-header">
                 <h3 class="text-lg font-semibold text-slate-200">${categoryName}</h3>
@@ -702,9 +681,7 @@ function renderSelectedDayMeals() {
             </div>
             <div class="p-4 space-y-3 meal-list-container">${mealsHTML}</div>
         </div>`;
-    }).join('');
-
-    container.innerHTML = finalHTML;
+    });
 
     initSortableLists();
     updateNutritionProgress();
@@ -1215,22 +1192,18 @@ async function handleFileSelect(event) {
     if (!file) return;
 
     const modal = document.getElementById('scanner-modal');
-    const feedback = document.getElementById('scanner-feedback');
-
     modal.classList.remove('hidden');
-    feedback.textContent = 'Elaborazione dell\'immagine...';
     
     const html5QrCode = new Html5Qrcode("scanner-container");
     try {
         const decodedText = await html5QrCode.scanFile(file, false);
-        scannerFeedback.textContent = 'Codice a barre trovato! Ricerca del prodotto...';
-        
+        showToast(`Codice trovato!`);
         if (onDecodeCallback) {
-            await onDecodeCallback(decodedText);
+            onDecodeCallback(decodedText);
         }
     } catch (err) {
-        console.error("Errore durante la scansione o la ricerca:", err);
-        showToast(err.message || "Nessun codice a barre trovato o errore nella ricerca.", true);
+        console.error("Errore scansione file:", err);
+        showToast("Nessun codice a barre trovato nell'immagine.", true);
     } finally {
         modal.classList.add('hidden');
         onDecodeCallback = null;
@@ -1243,11 +1216,6 @@ function stopScanner() {
 }
 
 function populateMealForm(foodData) {
-    if (!foodData) {
-        // Questo controllo è una salvaguardia. Se fetchFoodFromBarcode fallisce, dovrebbe lanciare un errore
-        // che viene gestito a monte. Ma se per qualche motivo restituisce un valore nullo, questo previene un crash.
-        return showToast("Dati del prodotto non trovati o non validi.", true);
-    }
     document.getElementById('food-search').value = foodData.name;
     document.getElementById('meal-quantity').value = 100;
     selectedFood = foodData;
@@ -1256,11 +1224,6 @@ function populateMealForm(foodData) {
 }
 
 function populateNewFoodForm(foodData) {
-    if (!foodData) {
-        // Come sopra, questa è una salvaguardia per prevenire errori imprevisti.
-        return showToast("Dati del prodotto non trovati o non validi.", true);
-    }
-
     const section = document.getElementById('new-food-content').closest('.collapsible-section');
     if (section.classList.contains('collapsed')) {
         section.querySelector('.section-header').click();
