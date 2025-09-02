@@ -377,34 +377,37 @@ async function addMeal() {
         return showToast('Seleziona un alimento e inserisci una quantità valida.', true);
     }
 
-    const mealDate = getMealTimestamp(type, selectedDate);
-
-    // Calcola il sortIndex per il nuovo pasto
-    const { start, end } = getDayBounds(selectedDate);
-    const mealsOnDayQuery = query(
-        collection(db, `users/${userId}/meals`),
-        where('date', '>=', Timestamp.fromDate(start)),
-        where('date', '<=', Timestamp.fromDate(end))
-    );
-    const querySnapshot = await getDocs(mealsOnDayQuery);
-    const maxIndex = querySnapshot.docs.reduce((max, doc) => {
-        const currentIdx = doc.data().sortIndex;
-        return (currentIdx !== undefined && currentIdx > max) ? currentIdx : max;
-    }, -1);
-    const sortIndex = maxIndex + 1;
-    
-    // Destructure to remove 'id' and avoid overwriting the meal's document ID
-    const { id, ...foodData } = selectedFood; 
+    const addBtn = document.getElementById('add-meal-btn');
+    const originalBtnHTML = addBtn.innerHTML;
 
     try {
+        addBtn.disabled = true;
+        addBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Aggiungo...`;
+
+        const mealDate = getMealTimestamp(type, selectedDate);
+
+        const { start, end } = getDayBounds(selectedDate);
+        const mealsOnDayQuery = query(
+            collection(db, `users/${userId}/meals`),
+            where('date', '>=', Timestamp.fromDate(start)),
+            where('date', '<=', Timestamp.fromDate(end))
+        );
+        const querySnapshot = await getDocs(mealsOnDayQuery);
+        const maxIndex = querySnapshot.docs.reduce((max, doc) => {
+            const currentIdx = doc.data().sortIndex;
+            return (currentIdx !== undefined && currentIdx > max) ? currentIdx : max;
+        }, -1);
+        const sortIndex = maxIndex + 1;
+        
+        const { id, ...foodData } = selectedFood; 
+
         await addDoc(collection(db, `users/${userId}/meals`), {
-            // Esplicita i campi per garantire che siano tutti presenti, anche se nulli nel foodData
             name: foodData.name,
             calories: foodData.calories || 0,
             proteins: foodData.proteins || 0,
             carbs: foodData.carbs || 0,
             fats: foodData.fats || 0,
-            fibers: foodData.fibers || 0, // Assicura che il campo fibre sia sempre presente
+            fibers: foodData.fibers || 0,
             quantity, 
             type,
             date: Timestamp.fromDate(mealDate),
@@ -415,11 +418,19 @@ async function addMeal() {
     } catch (error) {
         console.error("Errore aggiunta pasto:", error);
         showToast("Si è verificato un errore.", true);
+    } finally {
+        addBtn.disabled = false;
+        addBtn.innerHTML = originalBtnHTML;
     }
 }
 
 async function deleteMeal(mealId) {
     if (!isOnline) return showToast("Sei offline. Impossibile eliminare.", true);
+
+    if (!window.confirm("Sei sicuro di voler eliminare questo pasto?")) {
+        return;
+    }
+
     try {
         await deleteDoc(doc(db, `users/${userId}/meals`, mealId));
         showToast('Pasto eliminato con successo!');
@@ -443,7 +454,13 @@ async function addNewFood() {
         return showToast('Compila tutti i campi con valori validi.', true);
     }
     
+    const addBtn = document.getElementById('add-food-btn');
+    const originalBtnHTML = addBtn.innerHTML;
+
     try {
+        addBtn.disabled = true;
+        addBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Aggiungo...`;
+
         const foodsCollectionRef = collection(db, 'foods');
         const q = query(foodsCollectionRef, where('name_lowercase', '==', name.toLowerCase()), limit(1));
         const querySnapshot = await getDocs(q);
@@ -452,19 +469,22 @@ async function addNewFood() {
             const userConfirmed = window.confirm(`⚠️ Attenzione: un alimento chiamato "${name}" esiste già. Vuoi aggiungerlo comunque?`);
             if (!userConfirmed) {
                 showToast('Aggiunta annullata.');
-                return; // Interrompe l'esecuzione se l'utente annulla
+                return;
             }
         }
 
         await addDoc(foodsCollectionRef, {
             name, calories, proteins, carbs, fats, fibers,
-            name_lowercase: name.toLowerCase() // Aggiunge il campo per la ricerca
+            name_lowercase: name.toLowerCase()
         });
         showToast(`${name} aggiunto al database!`);
         resetNewFoodForm();
     } catch (error) {
         console.error("Errore aggiunta alimento:", error);
         showToast("Si è verificato un errore.", true);
+    } finally {
+        addBtn.disabled = false;
+        addBtn.innerHTML = originalBtnHTML;
     }
 }
 
@@ -485,37 +505,42 @@ async function saveRecipe() {
 
     if (ingredients.length === 0) return showToast('Aggiungi almeno un ingrediente valido.', true);
 
-    // Calcola i nutrienti totali e il peso totale
-    const totalNutrition = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
-    const foodsCollection = collection(db, 'foods');
-    let totalWeight = 0;
-
-    const ingredientDataPromises = ingredients.map(async (ing) => {
-        const q = query(foodsCollection, where('name_lowercase', '==', ing.name.toLowerCase()), limit(1));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-            const foodData = querySnapshot.docs[0].data();
-            const ratio = ing.quantity / 100;
-            totalNutrition.calories += (foodData.calories || 0) * ratio;
-            totalNutrition.proteins += (foodData.proteins || 0) * ratio;
-            totalNutrition.carbs += (foodData.carbs || 0) * ratio;
-            totalNutrition.fats += (foodData.fats || 0) * ratio;
-            totalNutrition.fibers += (foodData.fibers || 0) * ratio;
-            totalWeight += ing.quantity;
-            return { ...ing, found: true };
-        }
-        return { ...ing, found: false };
-    });
-
-    const resolvedIngredients = await Promise.all(ingredientDataPromises);
-    const notFound = resolvedIngredients.filter(ing => !ing.found);
-
-    if (notFound.length > 0) {
-        const notFoundNames = notFound.map(ing => ing.name).join(', ');
-        return showToast(`Ingredienti non trovati: ${notFoundNames}. Controlla il nome.`, true);
-    }
+    const saveBtn = document.getElementById('save-recipe-btn');
+    const originalBtnHTML = saveBtn.innerHTML;
 
     try {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Salvataggio...`;
+
+        const totalNutrition = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+        const foodsCollection = collection(db, 'foods');
+        let totalWeight = 0;
+
+        const ingredientDataPromises = ingredients.map(async (ing) => {
+            const q = query(foodsCollection, where('name_lowercase', '==', ing.name.toLowerCase()), limit(1));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+                const foodData = querySnapshot.docs[0].data();
+                const ratio = ing.quantity / 100;
+                totalNutrition.calories += (foodData.calories || 0) * ratio;
+                totalNutrition.proteins += (foodData.proteins || 0) * ratio;
+                totalNutrition.carbs += (foodData.carbs || 0) * ratio;
+                totalNutrition.fats += (foodData.fats || 0) * ratio;
+                totalNutrition.fibers += (foodData.fibers || 0) * ratio;
+                totalWeight += ing.quantity;
+                return { ...ing, found: true };
+            }
+            return { ...ing, found: false };
+        });
+
+        const resolvedIngredients = await Promise.all(ingredientDataPromises);
+        const notFound = resolvedIngredients.filter(ing => !ing.found);
+
+        if (notFound.length > 0) {
+            const notFoundNames = notFound.map(ing => ing.name).join(', ');
+            throw new Error(`Ingredienti non trovati: ${notFoundNames}. Controlla il nome.`);
+        }
+
         await addDoc(collection(db, `users/${userId}/recipes`), { 
             name, 
             ingredients, 
@@ -527,12 +552,24 @@ async function saveRecipe() {
         resetRecipeForm();
     } catch (error) {
         console.error("Errore salvataggio ricetta:", error);
-        showToast("Si è verificato un errore.", true);
+        if (error.message.startsWith('Ingredienti non trovati')) {
+            showToast(error.message, true);
+        } else {
+            showToast("Si è verificato un errore.", true);
+        }
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalBtnHTML;
     }
 }
 
 async function deleteRecipe(recipeId) {
     if (!isOnline) return showToast("Sei offline. Impossibile eliminare.", true);
+
+    if (!window.confirm("Sei sicuro di voler eliminare questa ricetta? L'azione è irreversibile.")) {
+        return;
+    }
+
     try {
         await deleteDoc(doc(db, `users/${userId}/recipes`, recipeId));
         showToast('Ricetta eliminata con successo!');
