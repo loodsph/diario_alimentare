@@ -19,6 +19,7 @@ let recipes = [];
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
 let waterCount = 0;
+let onConfirmAction = null; // Callback per il modale di conferma
 let isDragging = false; // Flag per gestire il conflitto click/drag
 let waterUnsubscribe = null;
 let waterHistory = {}; // e.g., { '2024-05-24': 8, '2024-05-23': 6 }
@@ -115,6 +116,10 @@ function setupListeners() {
     document.getElementById('save-recipe-btn').addEventListener('click', saveRecipe);
     document.getElementById('add-food-btn').addEventListener('click', addNewFood);
     document.getElementById('add-meal-btn').addEventListener('click', addMeal);
+
+    // Modale di conferma generico
+    document.getElementById('confirm-action-btn').addEventListener('click', executeConfirmAction);
+    document.getElementById('cancel-confirmation-btn').addEventListener('click', hideConfirmationModal);
 
     // Water Tracker
     document.getElementById('add-water-btn').addEventListener('click', () => incrementWaterCount(1));
@@ -426,18 +431,16 @@ async function addMeal() {
 
 async function deleteMeal(mealId) {
     if (!isOnline) return showToast("Sei offline. Impossibile eliminare.", true);
-
-    if (!window.confirm("Sei sicuro di voler eliminare questo pasto?")) {
-        return;
-    }
-
-    try {
-        await deleteDoc(doc(db, `users/${userId}/meals`, mealId));
-        showToast('Pasto eliminato con successo!');
-    } catch (error) {
-        console.error("Errore eliminazione pasto:", error);
-        showToast("Errore durante l'eliminazione.", true);
-    }
+    
+    showConfirmationModal("Sei sicuro di voler eliminare questo pasto?", async () => {
+        try {
+            await deleteDoc(doc(db, `users/${userId}/meals`, mealId));
+            showToast('Pasto eliminato con successo!');
+        } catch (error) {
+            console.error("Errore eliminazione pasto:", error);
+            showToast("Errore durante l'eliminazione.", true);
+        }
+    });
 }
 
 async function addNewFood() {
@@ -565,18 +568,16 @@ async function saveRecipe() {
 
 async function deleteRecipe(recipeId) {
     if (!isOnline) return showToast("Sei offline. Impossibile eliminare.", true);
-
-    if (!window.confirm("Sei sicuro di voler eliminare questa ricetta? L'azione è irreversibile.")) {
-        return;
-    }
-
-    try {
-        await deleteDoc(doc(db, `users/${userId}/recipes`, recipeId));
-        showToast('Ricetta eliminata con successo!');
-    } catch (error) {
-        console.error("Errore eliminazione ricetta:", error);
-        showToast("Errore durante l'eliminazione.", true);
-    }
+    
+    showConfirmationModal("Sei sicuro di voler eliminare questa ricetta? L'azione è irreversibile.", async () => {
+        try {
+            await deleteDoc(doc(db, `users/${userId}/recipes`, recipeId));
+            showToast('Ricetta eliminata con successo!');
+        } catch (error) {
+            console.error("Errore eliminazione ricetta:", error);
+            showToast("Errore durante l'eliminazione.", true);
+        }
+    });
 }
 
 async function useRecipe(recipeId) {
@@ -1229,6 +1230,24 @@ async function saveAndCloseGoalsModal() {
     renderWaterTracker();
     document.getElementById('goals-modal').classList.add('hidden');
     showToast('Obiettivi aggiornati con successo!');
+}
+
+function showConfirmationModal(message, onConfirm) {
+    document.getElementById('confirmation-message').textContent = message;
+    onConfirmAction = onConfirm;
+    document.getElementById('confirmation-modal').classList.remove('hidden');
+}
+
+function hideConfirmationModal() {
+    document.getElementById('confirmation-modal').classList.add('hidden');
+    onConfirmAction = null;
+}
+
+function executeConfirmAction() {
+    if (typeof onConfirmAction === 'function') {
+        onConfirmAction();
+    }
+    hideConfirmationModal();
 }
 
 function addIngredientRow() {
