@@ -142,7 +142,7 @@ body {
 }
 
 /* Modern input fields */
-.input-modern {
+.input-modern, .search-input, .form-input {
     background: rgba(30, 41, 59, 0.6);
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 12px;
@@ -153,14 +153,14 @@ body {
     backdrop-filter: blur(10px);
 }
 
-.input-modern:focus {
+.input-modern:focus, .search-input:focus, .form-input:focus {
     outline: none;
     border-color: #6366f1;
     box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
     transform: translateY(-2px);
 }
 
-.input-modern::placeholder {
+.input-modern::placeholder, .search-input::placeholder, .form-input::placeholder {
     color: #64748b;
 }
 
@@ -377,29 +377,6 @@ select.input-modern {
     padding-right: 3rem;
     appearance: none;
     -webkit-appearance: none;
-}
-
-/* Compatibility classes (could be merged) */
-.search-input, .form-input {
-    background: rgba(30, 41, 59, 0.6);
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 12px;
-    padding: 1rem 1.5rem;
-    color: #f1f5f9;
-    font-size: 0.875rem;
-    transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
-}
-
-.search-input:focus, .form-input:focus {
-    outline: none;
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-    transform: translateY(-2px);
-}
-
-.search-input::placeholder, .form-input::placeholder {
-    color: #64748b;
 }
 
 .modal {

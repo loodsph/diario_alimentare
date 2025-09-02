@@ -15,6 +15,7 @@ let currentLookupResults = [];
 let selectedFood = null;
 let selectedDate = new Date();
 let allMeals = [];
+let dailyMealsCache = {}; // Cache per i pasti giornalieri raggruppati e ordinati
 let recipes = [];
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
@@ -322,6 +323,7 @@ async function loadInitialData() {
                 return { id: doc.id, ...data, jsDate: data.date.toDate() };
             }).filter(Boolean); // Rimuove tutti i pasti scartati (null)
 
+            dailyMealsCache = {}; // Invalida la cache quando i dati dei pasti cambiano
             updateAllUI();
         }, (error) => {
             console.error("Errore nel listener dei pasti (onSnapshot):", error);
@@ -703,21 +705,36 @@ function updateDateDisplay() {
 
 function renderSelectedDayMeals() {
     const container = document.getElementById('selected-day-meals');
-    const { start, end } = getDayBounds(selectedDate);
-    const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
-    container.innerHTML = '';
+    const dateKey = selectedDate.toISOString().split('T')[0];
+    let mealsByCategory;
 
-    const mealsByCategory = { '🌅 Colazione': [], '🍽️ Pranzo': [], '🌙 Cena': [], '🍪 Spuntino': [] };
-    dayMeals.forEach(meal => mealsByCategory[meal.type]?.push(meal));
+    // Controlla se i dati per questo giorno sono già in cache per evitare ricalcoli
+    if (dailyMealsCache[dateKey]) {
+        mealsByCategory = dailyMealsCache[dateKey];
+    } else {
+        // Altrimenti, calcola, ordina e metti in cache
+        const { start, end } = getDayBounds(selectedDate);
+        const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
+        
+        mealsByCategory = { '🌅 Colazione': [], '🍽️ Pranzo': [], '🌙 Cena': [], '🍪 Spuntino': [] };
+        dayMeals.forEach(meal => mealsByCategory[meal.type]?.push(meal));
+
+        // Ordina ogni categoria una sola volta, al momento della creazione della cache
+        Object.values(mealsByCategory).forEach(meals => {
+            meals.sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
+        });
+
+        dailyMealsCache[dateKey] = mealsByCategory; // Salva in cache
+    }
+
+    container.innerHTML = '';
 
     Object.entries(mealsByCategory).forEach(([categoryName, meals]) => {
         const categoryTotals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
         let mealsHTML = '';
 
         if (meals.length > 0) {
-            // Ordina i pasti in base al loro indice di ordinamento
-            meals.sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
-
+            // L'ordinamento è già stato fatto durante la creazione della cache
             mealsHTML = meals.map(meal => {
                 const calculated = {
                     calories: ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100),
@@ -1027,7 +1044,9 @@ function changeDay(offset) {
 }
 
 function resetAppData() {
-    allMeals = []; recipes = [];
+    allMeals = [];
+    recipes = [];
+    dailyMealsCache = {}; // Pulisce la cache al logout
     destroyCharts();
     document.getElementById('selected-day-meals').innerHTML = '';
     if (waterHistoryUnsubscribe) { waterHistoryUnsubscribe(); waterHistoryUnsubscribe = null; }
