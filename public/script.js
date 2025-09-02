@@ -19,6 +19,7 @@ let recipes = [];
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
 let waterCount = 0;
+let isDragging = false; // Flag per gestire il conflitto click/drag
 let waterUnsubscribe = null;
 let waterHistory = {}; // e.g., { '2024-05-24': 8, '2024-05-23': 6 }
 let waterHistoryUnsubscribe = null;
@@ -230,6 +231,24 @@ function setupListeners() {
             selectedDate = new Date(historyRow.dataset.date);
             updateAllUI();
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Clic sull'intestazione di una categoria di pasto (es. "Colazione") per
+        // pre-compilare la sezione Aggiungi Pasto.
+        const mealHeader = target.closest('.meal-category-header');
+        if (mealHeader) {
+            const mealCategoryElement = mealHeader.closest('.meal-category');
+            if (mealCategoryElement) {
+                const mealType = mealCategoryElement.dataset.categoryName;
+                const mealTypeSelect = document.getElementById('meal-type');
+                const addMealCard = document.getElementById('add-meal-card');
+
+                if (mealType && mealTypeSelect && addMealCard) {
+                    mealTypeSelect.value = mealType;
+                    addMealCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    document.getElementById('food-search').focus();
+                }
+            }
         }
     });
 
@@ -684,7 +703,7 @@ function renderSelectedDayMeals() {
         }
 
         container.innerHTML += `
-        <div class="meal-category">
+        <div class="meal-category" data-category-name="${categoryName}">
             <div class="meal-category-header">
                 <h3 class="text-lg font-semibold text-slate-200">${categoryName}</h3>
                 <div class="text-sm font-medium text-slate-400">
@@ -860,7 +879,12 @@ function initSortableLists() {
             animation: 150,
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
+            onStart: () => {
+                isDragging = true;
+            },
             onEnd: async (evt) => {
+                isDragging = false; // Resetta il flag
+
                 // Ottiene gli elementi nella loro nuova posizione
                 const items = Array.from(evt.from.children);
 
