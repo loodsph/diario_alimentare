@@ -105,6 +105,12 @@ function setupListeners() {
     document.getElementById('edit-goals-btn').addEventListener('click', openGoalsModal);
     document.getElementById('cancel-goals-btn').addEventListener('click', closeGoalsModal);
     document.getElementById('save-goals-btn').addEventListener('click', saveAndCloseGoalsModal);
+
+    // Calcolo automatico calorie negli obiettivi
+    document.getElementById('goal-proteins').addEventListener('input', updateCalculatedCalories);
+    document.getElementById('goal-carbs').addEventListener('input', updateCalculatedCalories);
+    document.getElementById('goal-fats').addEventListener('input', updateCalculatedCalories);
+
     document.getElementById('add-ingredient-btn').addEventListener('click', addIngredientRow);
     document.getElementById('save-recipe-btn').addEventListener('click', saveRecipe);
     document.getElementById('add-food-btn').addEventListener('click', addNewFood);
@@ -832,6 +838,52 @@ function updateNutritionProgress() {
     updateProgress('carbs', totals.carbs);
     updateProgress('fats', totals.fats);
     updateProgress('fibers', totals.fibers);
+    
+    updateMacroDistributionBar();
+}
+
+function updateMacroDistributionBar() {
+    const proteinBar = document.getElementById('macro-dist-proteins');
+    const carbBar = document.getElementById('macro-dist-carbs');
+    const fatBar = document.getElementById('macro-dist-fats');
+    
+    const proteinPercText = document.getElementById('macro-dist-proteins-perc');
+    const carbPercText = document.getElementById('macro-dist-carbs-perc');
+    const fatPercText = document.getElementById('macro-dist-fats-perc');
+
+    if (!proteinBar || !carbBar || !fatBar) return; // Safety check
+
+    // Usa gli obiettivi nutrizionali invece dei totali giornalieri
+    const proteinCalories = (nutritionGoals.proteins || 0) * 4;
+    const carbCalories = (nutritionGoals.carbs || 0) * 4;
+    const fatCalories = (nutritionGoals.fats || 0) * 9;
+
+    const totalMacroCalories = proteinCalories + carbCalories + fatCalories;
+
+    if (totalMacroCalories === 0) {
+        proteinBar.style.width = '33.33%';
+        carbBar.style.width = '33.33%';
+        fatBar.style.width = '33.34%';
+        [proteinBar, carbBar, fatBar].forEach(el => el.textContent = '');
+        [proteinPercText, carbPercText, fatPercText].forEach(el => el.textContent = '0%');
+        return;
+    }
+
+    const proteinPerc = (proteinCalories / totalMacroCalories) * 100;
+    const carbPerc = (carbCalories / totalMacroCalories) * 100;
+    const fatPerc = (fatCalories / totalMacroCalories) * 100;
+
+    proteinBar.style.width = `${proteinPerc.toFixed(2)}%`;
+    carbBar.style.width = `${carbPerc.toFixed(2)}%`;
+    fatBar.style.width = `${fatPerc.toFixed(2)}%`;
+
+    proteinBar.textContent = proteinPerc > 10 ? `${proteinPerc.toFixed(0)}%` : '';
+    carbBar.textContent = carbPerc > 10 ? `${carbPerc.toFixed(0)}%` : '';
+    fatBar.textContent = fatPerc > 10 ? `${fatPerc.toFixed(0)}%` : '';
+
+    proteinPercText.textContent = `${proteinPerc.toFixed(0)}%`;
+    carbPercText.textContent = `${carbPerc.toFixed(0)}%`;
+    fatPercText.textContent = `${fatPerc.toFixed(0)}%`;
 }
 
 function renderWaterTracker() {
@@ -1061,8 +1113,9 @@ function listenToWaterHistory() {
 // ... (tutte le altre funzioni da qui in poi)
 
 function openGoalsModal() {
+    updateCalculatedCalories(); // Calcola subito all'apertura
     document.getElementById('goals-modal').classList.remove('hidden');
-    document.getElementById('goal-calories').focus();
+    document.getElementById('goal-proteins').focus(); // Focus sul primo campo modificabile
 }
 
 function closeGoalsModal() {
@@ -1077,6 +1130,54 @@ function updateGoalsInputs() {
     document.getElementById('goal-fats').value = nutritionGoals.fats;
     document.getElementById('goal-fibers').value = nutritionGoals.fibers;
     document.getElementById('goal-water').value = nutritionGoals.water;
+}
+
+function updateGoalsModalMacroDistributionBar(proteins, carbs, fats) {
+    const proteinBar = document.getElementById('modal-macro-dist-proteins');
+    const carbBar = document.getElementById('modal-macro-dist-carbs');
+    const fatBar = document.getElementById('modal-macro-dist-fats');
+    
+    const proteinPercText = document.getElementById('modal-macro-dist-proteins-perc');
+    const carbPercText = document.getElementById('modal-macro-dist-carbs-perc');
+    const fatPercText = document.getElementById('modal-macro-dist-fats-perc');
+
+    if (!proteinBar || !carbBar || !fatBar) return;
+
+    const proteinCalories = (proteins || 0) * 4;
+    const carbCalories = (carbs || 0) * 4;
+    const fatCalories = (fats || 0) * 9;
+    const totalMacroCalories = proteinCalories + carbCalories + fatCalories;
+
+    if (totalMacroCalories === 0) {
+        [proteinBar, carbBar, fatBar].forEach(el => { el.style.width = '33.33%'; el.textContent = ''; });
+        [proteinPercText, carbPercText, fatPercText].forEach(el => el.textContent = '0%');
+        return;
+    }
+
+    const proteinPerc = (proteinCalories / totalMacroCalories) * 100;
+    const carbPerc = (carbCalories / totalMacroCalories) * 100;
+    const fatPerc = (fatCalories / totalMacroCalories) * 100;
+
+    proteinBar.style.width = `${proteinPerc.toFixed(2)}%`;
+    carbBar.style.width = `${carbPerc.toFixed(2)}%`;
+    fatBar.style.width = `${fatPerc.toFixed(2)}%`;
+
+    proteinPercText.textContent = `${proteinPerc.toFixed(0)}%`;
+    carbPercText.textContent = `${carbPerc.toFixed(0)}%`;
+    fatPercText.textContent = `${fatPerc.toFixed(0)}%`;
+}
+
+function updateCalculatedCalories() {
+    const proteins = parseFloat(document.getElementById('goal-proteins').value) || 0;
+    const carbs = parseFloat(document.getElementById('goal-carbs').value) || 0;
+    const fats = parseFloat(document.getElementById('goal-fats').value) || 0;
+
+    const calculatedCalories = (proteins * 4) + (carbs * 4) + (fats * 9);
+    
+    document.getElementById('goal-calories').value = Math.round(calculatedCalories);
+
+    // Aggiorna anche la barra di distribuzione nel modale
+    updateGoalsModalMacroDistributionBar(proteins, carbs, fats);
 }
 
 async function saveAndCloseGoalsModal() {
