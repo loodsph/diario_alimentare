@@ -49,6 +49,9 @@ window.onload = () => {
         const appContainer = document.getElementById('app');
         if (user) {
             try {
+                // Resetta la data a oggi ad ogni login/refresh per coerenza.
+                selectedDate = new Date();
+
                 userId = user.uid;
                 loginScreen.classList.add('hidden');
                 loadingOverlay.classList.remove('hidden');
@@ -685,8 +688,14 @@ function updateDateDisplay() {
     displayElement.textContent = formatDate(selectedDate);
     
     const today = new Date();
-    const diffTime = selectedDate.getTime() - today.setHours(0, 0, 0, 0);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Crea nuove date per l'inizio del giorno per evitare di modificare gli oggetti originali
+    // e per garantire che vengano confrontate solo le parti della data.
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const startOfSelectedDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+
+    const diffTime = startOfSelectedDay.getTime() - startOfToday.getTime();
+    // Usa Math.round per un calcolo più robusto della differenza di giorni, gestendo piccole differenze di orario e l'ora legale.
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
     
     if (diffDays === 0) {
         infoElement.textContent = "📅 Oggi";
@@ -1127,12 +1136,6 @@ function listenToWaterData() {
         const newCount = data?.count || 0;
         waterCount = newCount; // Aggiorna il valore globale
         renderWaterTracker();
-
-        // Mostra una notifica di congratulazioni solo quando si raggiunge l'obiettivo per la prima volta
-        const goal = nutritionGoals.water || 8;
-        if (newCount >= goal && oldCount < goal) {
-            showToast(`🎉 Congratulazioni! Hai raggiunto il tuo obiettivo di ${goal} bicchieri d'acqua!`);
-        }
     }, (error) => {
         console.error("Errore nel listener dell'acqua:", error);
         waterCount = 0;
