@@ -8,6 +8,13 @@
     <meta name="theme-color" content="#0F172A">
     
     <link rel="icon" type="image/png" href="https://cdn-icons-png.freepik.com/512/8280/8280802.png">
+
+    <!-- PWA & Mobile App configuration -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NutriTrack">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.freepik.com/512/8280/8280802.png">
     
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
@@ -478,7 +485,17 @@
                 </div>
             </div>
 
-        </div> </div>
+        </div>
+
+        <footer class="text-center text-slate-500 text-sm mt-16 py-8 border-t border-slate-700/50">
+            <p class="mb-2">
+                Database alimenti basato su dati forniti da <a href="https://www.crea.gov.it/" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300">CREA - Alimenti e Nutrizione</a>.
+            </p>
+            <p>
+                I dati da scansione codice a barre sono forniti da <a href="https://world.openfoodfacts.org/" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300">Open Food Facts</a>.
+            </p>
+        </footer>
+    </div>
     
     <div id="toast" class="toast fixed bottom-8 left-8 p-4 rounded-2xl opacity-0 transform translate-y-10 transition-all duration-500 z-50 flex items-center gap-3" role="alert" aria-live="assertive">
         <div class="w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center">
