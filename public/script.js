@@ -369,11 +369,19 @@ async function addMeal() {
     const sortIndex = maxIndex + 1;
     
     // Destructure to remove 'id' and avoid overwriting the meal's document ID
-    const { id, ...foodData } = selectedFood;
+    const { id, ...foodData } = selectedFood; 
 
     try {
         await addDoc(collection(db, `users/${userId}/meals`), {
-            ...foodData, quantity, type,
+            // Esplicita i campi per garantire che siano tutti presenti, anche se nulli nel foodData
+            name: foodData.name,
+            calories: foodData.calories || 0,
+            proteins: foodData.proteins || 0,
+            carbs: foodData.carbs || 0,
+            fats: foodData.fats || 0,
+            fibers: foodData.fibers || 0, // Assicura che il campo fibre sia sempre presente
+            quantity, 
+            type,
             date: Timestamp.fromDate(mealDate),
             sortIndex: sortIndex
         });
@@ -512,11 +520,11 @@ async function useRecipe(recipeId) {
 
     // Calcola i nutrienti per 100g della ricetta
     const nutritionPer100g = {
-        calories: (totalNutrition.calories / totalWeight) * 100,
-        proteins: (totalNutrition.proteins / totalWeight) * 100,
-        carbs: (totalNutrition.carbs / totalWeight) * 100,
-        fats: (totalNutrition.fats / totalWeight) * 100,
-        fibers: (totalNutrition.fibers / totalWeight) * 100,
+        calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
+        proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
+        carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
+        fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
+        fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
     };
 
     // Calcola il peso di una singola porzione
@@ -650,7 +658,7 @@ function renderSelectedDayMeals() {
                         <div>
                             <p class="font-medium text-slate-200">${meal.name} (${Number(meal.quantity) || 0}g)</p>
                             <p class="text-sm text-slate-400 mt-1">
-                                Cal: ${calculated.calories.toFixed(0)} | P: ${calculated.proteins.toFixed(1)}g | C: ${calculated.carbs.toFixed(1)}g | G: ${calculated.fats.toFixed(1)}g
+                                Cal: ${calculated.calories.toFixed(0)} | P: ${calculated.proteins.toFixed(1)}g | C: ${calculated.carbs.toFixed(1)}g | G: ${calculated.fats.toFixed(1)}g | F: ${calculated.fibers.toFixed(1)}g
                             </p>
                         </div>
                         <button class="btn-modern btn-danger !py-2 !px-3 delete-meal-btn" data-meal-id="${meal.id}" aria-label="Elimina pasto">
@@ -668,7 +676,7 @@ function renderSelectedDayMeals() {
             <div class="meal-category-header">
                 <h3 class="text-lg font-semibold text-slate-200">${categoryName}</h3>
                 <div class="text-sm font-medium text-slate-400">
-                    Cal: ${categoryTotals.calories.toFixed(0)} | P: ${categoryTotals.proteins.toFixed(1)}g | C: ${categoryTotals.carbs.toFixed(1)}g | G: ${categoryTotals.fats.toFixed(1)}g
+                    Cal: ${categoryTotals.calories.toFixed(0)} | P: ${categoryTotals.proteins.toFixed(1)}g | C: ${categoryTotals.carbs.toFixed(1)}g | G: ${categoryTotals.fats.toFixed(1)}g | F: ${categoryTotals.fibers.toFixed(1)}g
                 </div>
             </div>
             <div class="p-4 space-y-3 meal-list-container">${mealsHTML}</div>
@@ -697,7 +705,7 @@ function renderRecipes() {
                     <div class="mt-4 pt-4 border-t border-slate-700">
                         <p class="font-semibold text-slate-300 mb-2">Per porzione (~${(recipe.totalWeight / recipe.servings).toFixed(0)}g):</p>
                         <p class="text-sm text-slate-400">
-                            Cal: ${(recipe.totalNutrition.calories / recipe.servings).toFixed(0)} | P: ${(recipe.totalNutrition.proteins / recipe.servings).toFixed(1)}g | C: ${(recipe.totalNutrition.carbs / recipe.servings).toFixed(1)}g | G: ${(recipe.totalNutrition.fats / recipe.servings).toFixed(1)}g
+                            Cal: ${(recipe.totalNutrition.calories / recipe.servings).toFixed(0)} | P: ${(recipe.totalNutrition.proteins / recipe.servings).toFixed(1)}g | C: ${(recipe.totalNutrition.carbs / recipe.servings).toFixed(1)}g | G: ${(recipe.totalNutrition.fats / recipe.servings).toFixed(1)}g | F: ${(recipe.totalNutrition.fibers / recipe.servings).toFixed(1)}g
                         </p>
                     </div>
                     ` : ''}
