@@ -419,7 +419,19 @@ async function addNewFood() {
     }
     
     try {
-        await addDoc(collection(db, 'foods'), { 
+        const foodsCollectionRef = collection(db, 'foods');
+        const q = query(foodsCollectionRef, where('name_lowercase', '==', name.toLowerCase()), limit(1));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+            const userConfirmed = window.confirm(`⚠️ Attenzione: un alimento chiamato "${name}" esiste già. Vuoi aggiungerlo comunque?`);
+            if (!userConfirmed) {
+                showToast('Aggiunta annullata.');
+                return; // Interrompe l'esecuzione se l'utente annulla
+            }
+        }
+
+        await addDoc(foodsCollectionRef, {
             name, calories, proteins, carbs, fats, fibers,
             name_lowercase: name.toLowerCase() // Aggiunge il campo per la ricerca
         });
