@@ -427,19 +427,57 @@ async function saveRecipe() {
     if (!isOnline) return showToast("Sei offline. Impossibile salvare.", true);
 
     const name = document.getElementById('recipe-name').value.trim();
+    const servings = parseInt(document.getElementById('recipe-servings').value) || 1;
     if (!name) return showToast('Inserisci un nome per la ricetta.', true);
+    if (servings <= 0) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
     
     const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div'))
         .map(el => ({
             name: el.querySelector('.recipe-ingredient-name').value.trim(),
-            quantity: parseInt(el.querySelector('.recipe-ingredient-quantity').value)
+            quantity: parseFloat(el.querySelector('.recipe-ingredient-quantity').value)
         }))
         .filter(ing => ing.name && ing.quantity > 0);
 
     if (ingredients.length === 0) return showToast('Aggiungi almeno un ingrediente valido.', true);
 
+    // Calcola i nutrienti totali e il peso totale
+    const totalNutrition = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+    const foodsCollection = collection(db, 'foods');
+    let totalWeight = 0;
+
+    const ingredientDataPromises = ingredients.map(async (ing) => {
+        const q = query(foodsCollection, where('name_lowercase', '==', ing.name.toLowerCase()), limit(1));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+            const foodData = querySnapshot.docs[0].data();
+            const ratio = ing.quantity / 100;
+            totalNutrition.calories += (foodData.calories || 0) * ratio;
+            totalNutrition.proteins += (foodData.proteins || 0) * ratio;
+            totalNutrition.carbs += (foodData.carbs || 0) * ratio;
+            totalNutrition.fats += (foodData.fats || 0) * ratio;
+            totalNutrition.fibers += (foodData.fibers || 0) * ratio;
+            totalWeight += ing.quantity;
+            return { ...ing, found: true };
+        }
+        return { ...ing, found: false };
+    });
+
+    const resolvedIngredients = await Promise.all(ingredientDataPromises);
+    const notFound = resolvedIngredients.filter(ing => !ing.found);
+
+    if (notFound.length > 0) {
+        const notFoundNames = notFound.map(ing => ing.name).join(', ');
+        return showToast(`Ingredienti non trovati: ${notFoundNames}. Controlla il nome.`, true);
+    }
+
     try {
-        await addDoc(collection(db, `users/${userId}/recipes`), { name, ingredients });
+        await addDoc(collection(db, `users/${userId}/recipes`), { 
+            name, 
+            ingredients, 
+            servings,
+            totalNutrition,
+            totalWeight
+        });
         showToast(`Ricetta "${name}" salvata!`);
         resetRecipeForm();
     } catch (error) {
@@ -463,39 +501,42 @@ async function useRecipe(recipeId) {
     if (!isOnline) return showToast("Sei offline. Impossibile usare la ricetta.", true);
     
     const recipe = recipes.find(r => r.id === recipeId);
-    if (!recipe) return showToast("Errore: Ricetta non trovata.", true);
+    if (!recipe || !recipe.totalNutrition || !recipe.totalWeight) {
+        return showToast("Errore: Dati della ricetta incompleti. Prova a salvarla di nuovo.", true);
+    }
 
     const mealType = document.getElementById('meal-type').value;
     const mealDate = getMealTimestamp(mealType, selectedDate);
 
-    showToast(`Aggiungo la ricetta "${recipe.name}"...`);
+    const { totalNutrition, totalWeight, servings, name } = recipe;
 
-    const batch = writeBatch(db);
-    const mealPromises = recipe.ingredients.map(async (ingredient) => {
-        // Cerca l'alimento nel database in tempo reale
-        const foodsCollection = collection(db, 'foods');
-        const q = query(foodsCollection, where('name_lowercase', '==', ingredient.name.toLowerCase()));
-        const querySnapshot = await getDocs(q);
+    // Calcola i nutrienti per 100g della ricetta
+    const nutritionPer100g = {
+        calories: (totalNutrition.calories / totalWeight) * 100,
+        proteins: (totalNutrition.proteins / totalWeight) * 100,
+        carbs: (totalNutrition.carbs / totalWeight) * 100,
+        fats: (totalNutrition.fats / totalWeight) * 100,
+        fibers: (totalNutrition.fibers / totalWeight) * 100,
+    };
 
-        if (!querySnapshot.empty) {
-            const foodDoc = querySnapshot.docs[0];
-            const food = { id: foodDoc.id, ...foodDoc.data() };
-            const { id, ...foodData } = food; // Rimuove l'ID dell'alimento per non confonderlo con l'ID del pasto
-            const newMealRef = doc(collection(db, `users/${userId}/meals`)); // Crea un riferimento per il nuovo pasto
-            batch.set(newMealRef, {
-                ...foodData,
-                quantity: ingredient.quantity,
-                type: mealType,
-                date: Timestamp.fromDate(mealDate)
-            });
-        } else {
-            console.warn(`Ingrediente non trovato nel DB: ${ingredient.name}`);
-            showToast(`Ingrediente "${ingredient.name}" non trovato nel database.`, true);
-        }
-    });
-    await Promise.all(mealPromises);
-    await batch.commit();
-    showToast(`Ricetta "${recipe.name}" aggiunta al diario!`);
+    // Calcola il peso di una singola porzione
+    const servingWeight = totalWeight / servings;
+
+    try {
+        // Aggiunge un pasto con i dati per 100g della ricetta e la quantità pari al peso di una porzione
+        await addDoc(collection(db, `users/${userId}/meals`), {
+            name: `${name} (1 porzione)`,
+            ...nutritionPer100g,
+            quantity: servingWeight,
+            type: mealType,
+            date: Timestamp.fromDate(mealDate),
+            recipeId: recipe.id 
+        });
+        showToast(`1 porzione di "${name}" aggiunta al diario!`);
+    } catch (error) {
+        console.error("Errore aggiunta ricetta come pasto:", error);
+        showToast("Si è verificato un errore.", true);
+    }
 }
 
 async function fetchFoodFromBarcode(barcode, callback) {
@@ -648,10 +689,18 @@ function renderRecipes() {
         <div class="recipe-card">
             <div class="flex justify-between items-start">
                 <div>
-                    <h4 class="font-bold text-lg text-slate-200 mb-3">${recipe.name}</h4>
+                    <h4 class="font-bold text-lg text-slate-200 mb-3">${recipe.name} ${recipe.servings > 1 ? `(${recipe.servings} porzioni)` : ''}</h4>
                     <ul class="mt-2 text-sm text-slate-400 list-disc pl-5 space-y-1">
                         ${recipe.ingredients.map(ing => `<li>${ing.name}: ${ing.quantity}g</li>`).join('')}
                     </ul>
+                    ${recipe.totalNutrition && recipe.totalWeight && recipe.servings ? `
+                    <div class="mt-4 pt-4 border-t border-slate-700">
+                        <p class="font-semibold text-slate-300 mb-2">Per porzione (~${(recipe.totalWeight / recipe.servings).toFixed(0)}g):</p>
+                        <p class="text-sm text-slate-400">
+                            Cal: ${(recipe.totalNutrition.calories / recipe.servings).toFixed(0)} | P: ${(recipe.totalNutrition.proteins / recipe.servings).toFixed(1)}g | C: ${(recipe.totalNutrition.carbs / recipe.servings).toFixed(1)}g | G: ${(recipe.totalNutrition.fats / recipe.servings).toFixed(1)}g
+                        </p>
+                    </div>
+                    ` : ''}
                 </div>
                 <div class="flex space-x-3">
                     <button class="btn-modern btn-primary !py-2 !px-3 use-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Usa ricetta">
@@ -1030,6 +1079,7 @@ function resetNewFoodForm() {
 
 function resetRecipeForm() {
     document.getElementById('recipe-name').value = '';
+    document.getElementById('recipe-servings').value = '1';
     const ingredientsContainer = document.getElementById('recipe-ingredients');
     ingredientsContainer.innerHTML = ''; // Svuota tutto
     addIngredientRow(); // Aggiunge la prima riga vuota
