@@ -501,52 +501,46 @@ async function loadInitialData() {
         const allMealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
         
         onSnapshot(allMealsQuery, (snapshot) => {
-            // Caching più intelligente: invalida solo i giorni modificati
+            let needsRecalculation = false;
+
             snapshot.docChanges().forEach((change) => {
+                needsRecalculation = true;
                 const data = change.doc.data();
                 const mealId = change.doc.id;
-                const meal = { id: mealId, ...data, jsDate: data.date.toDate() };
-                const dateKey = meal.jsDate.toISOString().split('T')[0];
+                const jsDate = data.date?.toDate();
+                if (!jsDate) return; // Salta dati corrotti
+
+                const dateKey = jsDate.toISOString().split('T')[0];
 
                 // Invalida la cache per il giorno del pasto e la cache dei totali
                 delete dailyMealsCache[dateKey];
                 delete dailyTotalsCache[dateKey];
 
                 if (change.type === "added") {
-                    // Aggiunge il nuovo pasto all'array globale
-                    allMeals.push(meal);
+                    allMeals.push({ id: mealId, ...data, jsDate });
                 }
                 if (change.type === "modified") {
-                    // Trova e aggiorna il pasto nell'array globale
                     const index = allMeals.findIndex(m => m.id === mealId);
-                    if (index > -1) allMeals[index] = meal;
+                    if (index > -1) {
+                        const oldDateKey = allMeals[index].jsDate.toISOString().split('T')[0];
+                        // Se la data è cambiata, invalida anche la cache del giorno precedente
+                        if (oldDateKey !== dateKey) {
+                            delete dailyMealsCache[oldDateKey];
+                            delete dailyTotalsCache[oldDateKey];
+                        }
+                        allMeals[index] = { id: mealId, ...data, jsDate };
+                    }
                 }
                 if (change.type === "removed") {
-                    // Rimuove il pasto dall'array globale
                     allMeals = allMeals.filter(m => m.id !== mealId);
                 }
             });
 
-            // Riordina allMeals per data decrescente dopo le modifiche
-            allMeals.sort((a, b) => b.jsDate - a.jsDate);
-
-            // Popola la cache dei totali giornalieri
-            dailyTotalsCache = {};
-            allMeals.forEach(meal => {
-                const dateKey = meal.jsDate.toISOString().split('T')[0];
-                if (!dailyTotalsCache[dateKey]) {
-                    dailyTotalsCache[dateKey] = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
-                }
-                const ratio = (Number(meal.quantity) || 0) / 100;
-                const totals = dailyTotalsCache[dateKey];
-                totals.calories += (Number(meal.calories) || 0) * ratio;
-                totals.proteins += (Number(meal.proteins) || 0) * ratio;
-                totals.carbs += (Number(meal.carbs) || 0) * ratio;
-                totals.fats += (Number(meal.fats) || 0) * ratio;
-                totals.fibers += (Number(meal.fibers) || 0) * ratio;
-            });
-
-            updateAllUI();
+            if (needsRecalculation) {
+                allMeals.sort((a, b) => b.jsDate - a.jsDate);
+                recalculateDailyTotals();
+                updateAllUI();
+            }
         }, (error) => {
             console.error("Errore nel listener dei pasti (onSnapshot):", error);
             showToast("Errore nel caricare i pasti in tempo reale.", true);
@@ -1664,6 +1658,23 @@ function addIngredientRow() {
         </button>`;
     container.appendChild(newIngredient);
     newIngredient.querySelector('.recipe-ingredient-name').focus();
+}
+
+function recalculateDailyTotals() {
+    dailyTotalsCache = {};
+    allMeals.forEach(meal => {
+        const dateKey = meal.jsDate.toISOString().split('T')[0];
+        if (!dailyTotalsCache[dateKey]) {
+            dailyTotalsCache[dateKey] = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+        }
+        const ratio = (Number(meal.quantity) || 0) / 100;
+        const totals = dailyTotalsCache[dateKey];
+        totals.calories += (Number(meal.calories) || 0) * ratio;
+        totals.proteins += (Number(meal.proteins) || 0) * ratio;
+        totals.carbs += (Number(meal.carbs) || 0) * ratio;
+        totals.fats += (Number(meal.fats) || 0) * ratio;
+        totals.fibers += (Number(meal.fibers) || 0) * ratio;
+    });
 }
 
 
