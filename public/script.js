@@ -148,7 +148,23 @@ function setupListeners() {
 
     // Input di ricerca
     const foodSearchInput = document.getElementById('food-search');
-    foodSearchInput.addEventListener('input', debounce(handleSearch, 300));
+    foodSearchInput.addEventListener('input', debounce(async (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const resultsContainer = document.getElementById('search-results');
+        const itemRenderer = food => `
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
+                <div class="font-medium text-slate-200">${food.name}</div>
+                <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
+            </div>
+        `;
+        if (searchTerm.length >= 2) {
+            currentSearchResults = await handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer);
+        } else {
+            resultsContainer.style.display = 'none';
+            currentSearchResults = [];
+        }
+    }, 300));
+
     foodSearchInput.addEventListener('focus', () => {
         document.getElementById('food-search-icon').classList.add('opacity-0');
     });
@@ -159,7 +175,24 @@ function setupListeners() {
     });
 
     const foodLookupInput = document.getElementById('food-lookup-search');
-    foodLookupInput.addEventListener('input', debounce(handleFoodLookup, 300));
+    foodLookupInput.addEventListener('input', debounce(async (e) => {
+        const searchTerm = e.target.value.toLowerCase();
+        const resultsContainer = document.getElementById('food-lookup-results-list');
+        const detailsContainer = document.getElementById('food-lookup-details');
+        const itemRenderer = food => `
+            <div class="lookup-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
+                <div class="font-medium text-slate-200">${food.name}</div>
+                <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
+            </div>
+        `;
+        if (searchTerm.length >= 2) {
+            currentLookupResults = await handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer);
+        } else {
+            resultsContainer.style.display = 'none';
+            detailsContainer.classList.add('hidden');
+            currentLookupResults = [];
+        }
+    }, 300));
     foodLookupInput.addEventListener('focus', () => {
         document.getElementById('food-lookup-search-icon').classList.add('opacity-0');
         // Ripristina l'espansione automatica della sezione quando si fa focus sull'input
@@ -982,47 +1015,6 @@ function updateNutritionProgress() {
     updateMacroDistributionBar();
 }
 
-/*
-function updateMealDistributionBar(dayMeals) {
-    const mealTypes = {
-        '🌅 Colazione': { bar: 'meal-dist-colazione', perc: 'meal-dist-colazione-perc', calories: 0 },
-        '🍽️ Pranzo': { bar: 'meal-dist-pranzo', perc: 'meal-dist-pranzo-perc', calories: 0 },
-        '🌙 Cena': { bar: 'meal-dist-cena', perc: 'meal-dist-cena-perc', calories: 0 },
-        '🍪 Spuntino': { bar: 'meal-dist-spuntino', perc: 'meal-dist-spuntino-perc', calories: 0 }
-    };
-
-    let totalDayCalories = 0;
-
-    dayMeals.forEach(meal => {
-        const mealCalories = ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100);
-        if (mealTypes[meal.type]) {
-            mealTypes[meal.type].calories += mealCalories;
-        }
-        totalDayCalories += mealCalories;
-    });
-
-    if (totalDayCalories === 0) {
-        // Se non ci sono calorie, resetta la barra
-        Object.values(mealTypes).forEach(type => {
-            document.getElementById(type.bar).style.width = '0%';
-            document.getElementById(type.bar).textContent = '';
-            document.getElementById(type.perc).textContent = '0%';
-        });
-        return;
-    }
-
-    Object.values(mealTypes).forEach(type => {
-        const percentage = (type.calories / totalDayCalories) * 100;
-        const barElement = document.getElementById(type.bar);
-        const percElement = document.getElementById(type.perc);
-
-        barElement.style.width = `${percentage.toFixed(2)}%`;
-        barElement.textContent = percentage > 10 ? `${percentage.toFixed(0)}%` : '';
-        percElement.textContent = `${percentage.toFixed(0)}%`;
-    });
-}
-*/
-
 function updateMealDistributionBar(dayMeals) {
     const mealTypes = {
         '🌅 Colazione': { bar: 'meal-dist-colazione', perc: 'meal-dist-colazione-perc', calories: 0 },
@@ -1487,84 +1479,41 @@ function resetRecipeForm() {
 
 // --- Funzioni di ricerca ---
 
-async function handleSearch(e) {
-    const searchTerm = e.target.value.toLowerCase();
-    const resultsContainer = document.getElementById('search-results');
-    
+/**
+ * Funzione generica per la ricerca di alimenti nel database Firestore.
+ * @param {string} searchTerm - Il termine da cercare (in minuscolo).
+ * @param {HTMLElement} resultsContainer - L'elemento contenitore per i risultati.
+ * @param {function(object): string} itemRenderer - Una funzione che prende un oggetto 'food' e restituisce una stringa HTML per quell'elemento.
+ * @returns {Promise<Array>} Una promise che si risolve con l'array dei risultati.
+ */
+async function handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer) {
     if (searchTerm.length < 2) {
         resultsContainer.style.display = 'none';
-        currentSearchResults = [];
-        return;
+        return [];
     }
 
     try {
         const q = query(
-            collection(db, 'foods'), 
-            where('name_lowercase', '>=', searchTerm), 
-            where('name_lowercase', '<=', searchTerm + '\uf8ff'), 
+            collection(db, 'foods'),
+            where('name_lowercase', '>=', searchTerm),
+            where('name_lowercase', '<=', searchTerm + '\uf8ff'),
             orderBy('name_lowercase'),
             limit(10)
         );
         const querySnapshot = await getDocs(q);
-        currentSearchResults = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        if (currentSearchResults.length > 0) {
-            resultsContainer.innerHTML = currentSearchResults.map(food => `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
-                <div class="font-medium text-slate-200">${food.name}</div>
-                <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
-            </div>
-        `).join('');
-            resultsContainer.style.display = 'block';
+        if (results.length > 0) {
+            resultsContainer.innerHTML = results.map(itemRenderer).join('');
         } else {
             resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun alimento trovato.</div>`;
-            resultsContainer.style.display = 'block';
         }
+        resultsContainer.style.display = 'block';
+        return results;
     } catch (error) {
         console.error("Errore ricerca alimento:", error);
         showToast("Errore durante la ricerca.", true);
-    }
-}
-
-async function handleFoodLookup(e) {
-    const searchTerm = e.target.value.toLowerCase();
-    const resultsContainer = document.getElementById('food-lookup-results-list');
-    const detailsContainer = document.getElementById('food-lookup-details');
-
-    if (searchTerm.length < 2) {
-        resultsContainer.style.display = 'none';
-        detailsContainer.classList.add('hidden');
-        currentLookupResults = [];
-        return;
-    }
-
-    try {
-        const q = query(
-            collection(db, 'foods'), 
-            where('name_lowercase', '>=', searchTerm), 
-            where('name_lowercase', '<=', searchTerm + '\uf8ff'), 
-            orderBy('name_lowercase'),
-            limit(10)
-        );
-        const querySnapshot = await getDocs(q);
-        currentLookupResults = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        if (currentLookupResults.length > 0) {
-            resultsContainer.innerHTML = currentLookupResults.map(food => `
-            <div class="lookup-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
-                <div class="font-medium text-slate-200">${food.name}</div>
-                <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
-            </div>
-        `).join('');
-            resultsContainer.style.display = 'block';
-        } else {
-            resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun alimento trovato.</div>`;
-            resultsContainer.style.display = 'block';
-            detailsContainer.classList.add('hidden');
-        }
-    } catch (error) {
-        console.error("Errore ricerca alimento:", error);
-        showToast("Errore durante la ricerca.", true);
+        return [];
     }
 }
 
