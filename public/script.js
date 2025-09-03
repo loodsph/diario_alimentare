@@ -22,6 +22,7 @@ let currentRecipeIngredientResults = [];
 let mealToEditId = null; // ID del pasto attualmente in modifica
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
+let html5QrCodeScanner = null;
 let waterCount = 0;
 let onConfirmAction = null; // Callback per il modale di conferma
 // let isDragging = false; // Flag per gestire il conflitto click/drag
@@ -145,11 +146,11 @@ function setupListeners() {
     // Scanner
     document.getElementById('scan-barcode-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateMealForm)));
     document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm)));
+    document.getElementById('scan-from-file-btn').addEventListener('click', () => {
+        stopScanner(false); // Ferma lo stream video ma lascia il modale aperto
+        document.getElementById('barcode-file-input').click();
+    });
     document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
-    document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
-
-    // Input di ricerca
-    const foodSearchInput = document.getElementById('food-search');
     foodSearchInput.addEventListener('input', debounce(async (e) => {
         const searchTerm = e.target.value.toLowerCase();
         const resultsContainer = document.getElementById('search-results');
@@ -1791,7 +1792,40 @@ function startScanner(onDecode) {
         return showToast("Libreria di scansione non caricata.", true);
     }
     onDecodeCallback = onDecode;
-    document.getElementById('barcode-file-input').click();
+
+    const modal = document.getElementById('scanner-modal');
+    modal.classList.remove('hidden');
+
+    const feedback = document.getElementById('scanner-feedback');
+    feedback.textContent = 'Avvio fotocamera...';
+
+    html5QrCodeScanner = new Html5Qrcode("scanner-container", { verbose: false });
+
+    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+        stopScanner();
+        showToast(`Codice trovato!`);
+        if (onDecodeCallback) {
+            onDecodeCallback(decodedText);
+        }
+    };
+
+    const config = { 
+        fps: 10, 
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+            const qrboxSize = Math.floor(minEdge * 0.8);
+            return { width: qrboxSize, height: qrboxSize };
+        },
+        rememberLastUsedCamera: true
+    };
+
+    html5QrCodeScanner.start({ facingMode: "environment" }, config, qrCodeSuccessCallback, (errorMessage) => {
+        feedback.textContent = 'Punta la fotocamera verso un codice a barre...';
+    }).catch((err) => {
+        console.error("Impossibile avviare lo scanner:", err);
+        feedback.textContent = 'Impossibile accedere alla fotocamera. Prova a caricare un file.';
+        showToast("Impossibile avviare la fotocamera. Controlla i permessi.", true);
+    });
 }
 
 /**
@@ -1848,8 +1882,8 @@ async function handleFileSelect(event) {
         // Ridimensiona l'immagine per prevenire crash dovuti alla memoria
         const imageToScan = await resizeImage(file, 800); // Ridimensionamento più aggressivo
 
-        const html5QrCode = new Html5Qrcode("scanner-container", { verbose: false });
-        const decodedText = await html5QrCode.scanFile(imageToScan, false);
+        const fileScanner = new Html5Qrcode("scanner-container", { verbose: false });
+        const decodedText = await fileScanner.scanFile(imageToScan, false);
         
         showToast(`Codice trovato!`);
         if (onDecodeCallback) {
@@ -1909,8 +1943,16 @@ function resizeImageFallback(file, maxWidth) {
     });
 }
 
-function stopScanner() {
-    document.getElementById('scanner-modal').classList.add('hidden');
+function stopScanner(hideModal = true) {
+    if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
+        html5QrCodeScanner.stop().catch(err => {
+            console.error("Errore durante lo stop dello scanner:", err);
+        });
+    }
+    html5QrCodeScanner = null;
+    if (hideModal) {
+        document.getElementById('scanner-modal').classList.add('hidden');
+    }
 }
 
 function populateMealForm(foodData) {
