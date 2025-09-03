@@ -153,14 +153,30 @@ function setupListeners() {
     foodSearchInput.addEventListener('input', debounce(async (e) => {
         const searchTerm = e.target.value.toLowerCase();
         const resultsContainer = document.getElementById('search-results');
-        const itemRenderer = food => `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
-                <div class="font-medium text-slate-200">${food.name}</div>
-                <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
-            </div>
-        `;
+        
         if (searchTerm.length >= 2) {
-            currentSearchResults = await handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer);
+            currentSearchResults = await searchFoodsAndRecipes(searchTerm);
+            
+            if (currentSearchResults.length > 0) {
+                resultsContainer.innerHTML = currentSearchResults.map(item => {
+                    if (item.isRecipe) {
+                        const servingWeight = (item.totalWeight / item.servings).toFixed(0);
+                        return `
+                        <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}" data-is-recipe="true">
+                            <div class="font-medium text-slate-200"><i class="fas fa-book text-orange-400 mr-2"></i>${item.name}</div>
+                            <div class="text-sm text-slate-400">Ricetta - 1 porzione (~${servingWeight}g)</div>
+                        </div>`;
+                    }
+                    return `
+                    <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
+                        <div class="font-medium text-slate-200">${item.name}</div>
+                        <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
+                    </div>`;
+                }).join('');
+            } else {
+                resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun risultato trovato.</div>`;
+            }
+            resultsContainer.style.display = 'block';
         } else {
             resultsContainer.style.display = 'none';
             currentSearchResults = [];
@@ -307,11 +323,29 @@ function setupListeners() {
         // Seleziona alimento dalla ricerca pasto
         const searchItem = target.closest('.search-item');
         if (searchItem) {
-            selectedFood = currentSearchResults.find(f => f.id === searchItem.dataset.foodId);
+            const itemId = searchItem.dataset.itemId;
+            const isRecipe = searchItem.dataset.isRecipe === 'true';
+            
+            selectedFood = currentSearchResults.find(item => item.id === itemId);
+
             if (selectedFood) {
-                document.getElementById('food-search').value = selectedFood.name;
+                const foodSearchInput = document.getElementById('food-search');
+                const quantityInput = document.getElementById('meal-quantity');
+
+                foodSearchInput.value = selectedFood.name;
+                
+                if (isRecipe) {
+                    // Se è una ricetta, calcoliamo il peso di una porzione e lo impostiamo come quantità
+                    const servingWeight = selectedFood.totalWeight / selectedFood.servings;
+                    quantityInput.value = servingWeight.toFixed(0);
+                    selectedFood.isRecipe = true; // Aggiungiamo un flag per riconoscerla dopo
+                } else {
+                    // Per un alimento normale, lasciamo la quantità vuota o a 100
+                    quantityInput.value = '100';
+                }
+
                 document.getElementById('search-results').style.display = 'none';
-                document.getElementById('meal-quantity').focus();
+                quantityInput.focus();
             }
         }
 
@@ -467,17 +501,34 @@ async function loadInitialData() {
         const allMealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
         
         onSnapshot(allMealsQuery, (snapshot) => {
-            console.log(`Listener pasti: ricevuti ${snapshot.docs.length} documenti.`);
-            allMeals = snapshot.docs.map(doc => {
-                const data = doc.data();
-                if (!data.date || typeof data.date.toDate !== 'function') {
-                    console.warn(`Pasto con ID ${doc.id} ha una data non valida o mancante.`, data);
-                    return null; // Scarta questo dato non valido
-                }
-                return { id: doc.id, ...data, jsDate: data.date.toDate() };
-            }).filter(Boolean); // Rimuove tutti i pasti scartati (null)
+            // Caching più intelligente: invalida solo i giorni modificati
+            snapshot.docChanges().forEach((change) => {
+                const data = change.doc.data();
+                const mealId = change.doc.id;
+                const meal = { id: mealId, ...data, jsDate: data.date.toDate() };
+                const dateKey = meal.jsDate.toISOString().split('T')[0];
 
-            dailyMealsCache = {}; // Invalida la cache quando i dati dei pasti cambiano
+                // Invalida la cache per il giorno del pasto e la cache dei totali
+                delete dailyMealsCache[dateKey];
+                delete dailyTotalsCache[dateKey];
+
+                if (change.type === "added") {
+                    // Aggiunge il nuovo pasto all'array globale
+                    allMeals.push(meal);
+                }
+                if (change.type === "modified") {
+                    // Trova e aggiorna il pasto nell'array globale
+                    const index = allMeals.findIndex(m => m.id === mealId);
+                    if (index > -1) allMeals[index] = meal;
+                }
+                if (change.type === "removed") {
+                    // Rimuove il pasto dall'array globale
+                    allMeals = allMeals.filter(m => m.id !== mealId);
+                }
+            });
+
+            // Riordina allMeals per data decrescente dopo le modifiche
+            allMeals.sort((a, b) => b.jsDate - a.jsDate);
 
             // Popola la cache dei totali giornalieri
             dailyTotalsCache = {};
@@ -494,7 +545,6 @@ async function loadInitialData() {
                 totals.fats += (Number(meal.fats) || 0) * ratio;
                 totals.fibers += (Number(meal.fibers) || 0) * ratio;
             });
-
 
             updateAllUI();
         }, (error) => {
@@ -556,6 +606,25 @@ async function addMeal() {
         return showToast('Seleziona un alimento e inserisci una quantità valida.', true);
     }
 
+    // Se l'alimento selezionato è una ricetta, gestiscila in modo specifico
+    if (selectedFood.isRecipe) {
+        const { totalNutrition, totalWeight, servings, name } = selectedFood;
+        const nutritionPer100g = {
+            calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
+            proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
+            carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
+            fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
+            fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
+        };
+        
+        // Sovrascrivi selectedFood con i dati per 100g, così il resto della funzione non cambia
+        selectedFood = {
+            ...nutritionPer100g,
+            name: `${name} (1 porzione)`,
+            recipeId: selectedFood.id
+        };
+    }
+
     const addBtn = document.getElementById('add-meal-btn');
     const originalBtnHTML = addBtn.innerHTML;
 
@@ -578,7 +647,7 @@ async function addMeal() {
         }, -1);
         const sortIndex = maxIndex + 1;
         
-        const { id, ...foodData } = selectedFood; 
+        const { id, ...foodData } = selectedFood;
 
         await addDoc(collection(db, `users/${userId}/meals`), {
             name: foodData.name,
@@ -590,7 +659,8 @@ async function addMeal() {
             quantity, 
             type,
             date: Timestamp.fromDate(mealDate),
-            sortIndex: sortIndex
+            sortIndex: sortIndex,
+            recipeId: foodData.recipeId || null // Salva l'ID della ricetta se presente
         });
         showToast('Pasto aggiunto al diario!');
         resetAddMealForm();
@@ -715,6 +785,10 @@ async function saveRecipe() {
 
     if (ingredients.length === 0) return showToast('Aggiungi almeno un ingrediente valido.', true);
 
+    if (ingredients.length > 30) {
+        return showToast('Una ricetta non può avere più di 30 ingredienti (limite del database).', true);
+    }
+
     const saveBtn = document.getElementById('save-recipe-btn');
     const originalBtnHTML = saveBtn.innerHTML;
 
@@ -726,45 +800,53 @@ async function saveRecipe() {
         const foodsCollection = collection(db, 'foods');
         let totalWeight = 0;
 
-        const ingredientDataPromises = ingredients.map(async (ing) => {
-            let foodData;
-            let found = false;
+        // Ottimizzazione: usa query 'in' per recuperare tutti gli ingredienti in una sola volta
+        const foodDataMap = new Map();
 
-            if (ing.foodId) { // Se abbiamo un ID, usiamolo! È più affidabile.
-                const foodDoc = await getDoc(doc(db, 'foods', ing.foodId));
-                if (foodDoc.exists()) {
-                    foodData = foodDoc.data();
-                    found = true;
-                }
-            } else { // Altrimenti, tentiamo la ricerca per nome come fallback
-                const q = query(foodsCollection, where('name_lowercase', '==', ing.name.toLowerCase()), limit(1));
-                const querySnapshot = await getDocs(q);
-                if (!querySnapshot.empty) {
-                    foodData = querySnapshot.docs[0].data();
-                    found = true;
-                }
-            }
+        // 1. Recupera ingredienti con ID
+        const ingredientsWithId = ingredients.filter(ing => ing.foodId);
+        if (ingredientsWithId.length > 0) {
+            const ids = ingredientsWithId.map(ing => ing.foodId);
+            const q = query(foodsCollection, where(documentId(), 'in', ids));
+            const snapshot = await getDocs(q);
+            snapshot.forEach(doc => foodDataMap.set(doc.id, doc.data()));
+        }
 
-            if (found) {
+        // 2. Recupera ingredienti senza ID (basati sul nome)
+        const ingredientsWithoutId = ingredients.filter(ing => !ing.foodId);
+        if (ingredientsWithoutId.length > 0) {
+            const names = ingredientsWithoutId.map(ing => ing.name.toLowerCase());
+            const q = query(foodsCollection, where('name_lowercase', 'in', names));
+            const snapshot = await getDocs(q);
+            snapshot.forEach(doc => foodDataMap.set(doc.data().name_lowercase, doc.data()));
+        }
+
+        // 3. Calcola i totali e verifica se tutti gli ingredienti sono stati trovati
+        const notFoundIngredients = [];
+        for (const ing of ingredients) {
+            const foodData = ing.foodId 
+                ? foodDataMap.get(ing.foodId) 
+                : foodDataMap.get(ing.name.toLowerCase());
+
+            if (foodData) {
                 const ratio = ing.quantity / 100;
                 ['calories', 'proteins', 'carbs', 'fats', 'fibers'].forEach(key => {
                     totalNutrition[key] += (foodData[key] || 0) * ratio;
                 });
                 totalWeight += ing.quantity;
+            } else {
+                notFoundIngredients.push(ing.name);
             }
-            return { ...ing, found };
-        });
+        }
 
-        const resolvedIngredients = await Promise.all(ingredientDataPromises);
-        const notFound = resolvedIngredients.filter(ing => !ing.found);
-
-        if (notFound.length > 0) {
-            const notFoundNames = notFound.map(ing => ing.name).join(', ');
+        if (notFoundIngredients.length > 0) {
+            const notFoundNames = notFoundIngredients.join(', ');
             throw new Error(`Ingredienti non trovati: ${notFoundNames}. Controlla il nome.`);
         }
 
         await addDoc(collection(db, `users/${userId}/recipes`), { 
             name, 
+            name_lowercase: name.toLowerCase(),
             ingredients, 
             servings,
             totalNutrition,
@@ -1649,6 +1731,48 @@ async function handleGenericFoodSearch(searchTerm, resultsContainer, itemRendere
     }
 }
 
+async function searchFoodsAndRecipes(searchTerm) {
+    if (searchTerm.length < 2) return [];
+
+    try {
+        // Promise per la ricerca di alimenti
+        const foodsQuery = query(
+            collection(db, 'foods'),
+            where('name_lowercase', '>=', searchTerm),
+            where('name_lowercase', '<=', searchTerm + '\uf8ff'),
+            orderBy('name_lowercase'),
+            limit(5)
+        );
+        const foodsPromise = getDocs(foodsQuery);
+
+        // Promise per la ricerca di ricette
+        const recipesQuery = query(
+            collection(db, `users/${userId}/recipes`),
+            where('name_lowercase', '>=', searchTerm),
+            where('name_lowercase', '<=', searchTerm + '\uf8ff'),
+            orderBy('name_lowercase'),
+            limit(5)
+        );
+        const recipesPromise = getDocs(recipesQuery);
+
+        // Esegui entrambe le ricerche in parallelo
+        const [foodsSnapshot, recipesSnapshot] = await Promise.all([foodsPromise, recipesPromise]);
+
+        const foodResults = foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const recipeResults = recipesSnapshot.docs.map(doc => ({ 
+            id: doc.id, 
+            ...doc.data(), 
+            isRecipe: true // Aggiungi un flag per identificarle
+        }));
+
+        // Combina e ordina i risultati (opzionale, ma può essere utile)
+        return [...recipeResults, ...foodResults];
+    } catch (error) {
+        console.error("Errore nella ricerca unificata:", error);
+        showToast("Errore durante la ricerca.", true);
+        return [];
+    }
+}
 // --- Funzioni Scanner ---
 
 function startScanner(onDecode) {
