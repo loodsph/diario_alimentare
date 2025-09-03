@@ -22,7 +22,7 @@ let isOnline = navigator.onLine;
 let onDecodeCallback = null;
 let waterCount = 0;
 let onConfirmAction = null; // Callback per il modale di conferma
-let isDragging = false; // Flag per gestire il conflitto click/drag
+// let isDragging = false; // Flag per gestire il conflitto click/drag
 let waterUnsubscribe = null;
 let waterHistory = {}; // e.g., { '2024-05-24': 8, '2024-05-23': 6 }
 let waterHistoryUnsubscribe = null;
@@ -859,7 +859,7 @@ function renderSelectedDayMeals() {
         </div>`;
     });
 
-    initSortableLists();
+    // initSortableLists();
     updateNutritionProgress();
 }
 
@@ -982,6 +982,7 @@ function updateNutritionProgress() {
     updateMacroDistributionBar();
 }
 
+/*
 function updateMealDistributionBar(dayMeals) {
     const mealTypes = {
         '🌅 Colazione': { bar: 'meal-dist-colazione', perc: 'meal-dist-colazione-perc', calories: 0 },
@@ -1020,6 +1021,47 @@ function updateMealDistributionBar(dayMeals) {
         percElement.textContent = `${percentage.toFixed(0)}%`;
     });
 }
+*/
+
+function updateMealDistributionBar(dayMeals) {
+    const mealTypes = {
+        '🌅 Colazione': { bar: 'meal-dist-colazione', perc: 'meal-dist-colazione-perc', calories: 0 },
+        '🍽️ Pranzo': { bar: 'meal-dist-pranzo', perc: 'meal-dist-pranzo-perc', calories: 0 },
+        '🌙 Cena': { bar: 'meal-dist-cena', perc: 'meal-dist-cena-perc', calories: 0 },
+        '🍪 Spuntino': { bar: 'meal-dist-spuntino', perc: 'meal-dist-spuntino-perc', calories: 0 }
+    };
+
+    let totalDayCalories = 0;
+
+    dayMeals.forEach(meal => {
+        const mealCalories = ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100);
+        if (mealTypes[meal.type]) {
+            mealTypes[meal.type].calories += mealCalories;
+        }
+        totalDayCalories += mealCalories;
+    });
+
+    if (totalDayCalories === 0) {
+        // Se non ci sono calorie, resetta la barra
+        Object.values(mealTypes).forEach(type => {
+            document.getElementById(type.bar).style.width = '0%';
+            document.getElementById(type.bar).textContent = '';
+            document.getElementById(type.perc).textContent = '0%';
+        });
+        return;
+    }
+
+    Object.values(mealTypes).forEach(type => {
+        const percentage = (type.calories / totalDayCalories) * 100;
+        const barElement = document.getElementById(type.bar);
+        const percElement = document.getElementById(type.perc);
+
+        barElement.style.width = `${percentage.toFixed(2)}%`;
+        barElement.textContent = percentage > 10 ? `${percentage.toFixed(0)}%` : '';
+        percElement.textContent = `${percentage.toFixed(0)}%`;
+    });
+}
+
 
 function updateMacroDistributionBar() {
     const proteinBar = document.getElementById('macro-dist-proteins');
@@ -1097,6 +1139,7 @@ function renderWaterTracker() {
     }
 }
 
+/*
 function initSortableLists() {
     const mealLists = document.querySelectorAll('.meal-list-container');
     mealLists.forEach(list => {
@@ -1111,10 +1154,10 @@ function initSortableLists() {
             ghostClass: 'sortable-ghost',
             chosenClass: 'sortable-chosen',
             onStart: () => {
-                isDragging = true;
+                // isDragging = true;
             },
             onEnd: async (evt) => {
-                isDragging = false; // Resetta il flag
+                // isDragging = false; // Resetta il flag
 
                 // Ottiene gli elementi nella loro nuova posizione
                 const items = Array.from(evt.from.children);
@@ -1132,8 +1175,9 @@ function initSortableLists() {
         });
     });
 }
+*/
 
-async function updateMealOrder(updates) {
+/* async function updateMealOrder(updates) {
     if (!userId || !isOnline) {
         showToast("Sei offline. Impossibile riordinare.", true);
         renderSelectedDayMeals(); // Ripristina l'ordine visivo
@@ -1152,7 +1196,7 @@ async function updateMealOrder(updates) {
         console.error("Errore durante l'aggiornamento dell'ordine dei pasti:", error);
         showToast("Errore durante il riordino.", true);
     }
-}
+} */
 
 
 // --- FUNZIONI UTILITY E HELPERS ---
