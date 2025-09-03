@@ -99,6 +99,9 @@ window.onload = () => {
 // --- GESTIONE EVENTI ---
 
 function setupListeners() {
+    // Dichiaro le variabili per gli input qui per evitare errori di riferimento
+    const foodSearchInput = document.getElementById('food-search');
+
     // Navigazione date
     document.getElementById('prev-day').addEventListener('click', () => changeDay(-1));
     document.getElementById('next-day').addEventListener('click', () => changeDay(1));
@@ -151,6 +154,7 @@ function setupListeners() {
         document.getElementById('barcode-file-input').click();
     });
     document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
+    document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
     foodSearchInput.addEventListener('input', debounce(async (e) => {
         const searchTerm = e.target.value.toLowerCase();
         const resultsContainer = document.getElementById('search-results');
