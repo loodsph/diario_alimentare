@@ -978,7 +978,47 @@ function updateNutritionProgress() {
     updateProgress('fats', totals.fats);
     updateProgress('fibers', totals.fibers);
     
+    updateMealDistributionBar(dayMeals);
     updateMacroDistributionBar();
+}
+
+function updateMealDistributionBar(dayMeals) {
+    const mealTypes = {
+        '🌅 Colazione': { bar: 'meal-dist-colazione', perc: 'meal-dist-colazione-perc', calories: 0 },
+        '🍽️ Pranzo': { bar: 'meal-dist-pranzo', perc: 'meal-dist-pranzo-perc', calories: 0 },
+        '🌙 Cena': { bar: 'meal-dist-cena', perc: 'meal-dist-cena-perc', calories: 0 },
+        '🍪 Spuntino': { bar: 'meal-dist-spuntino', perc: 'meal-dist-spuntino-perc', calories: 0 }
+    };
+
+    let totalDayCalories = 0;
+
+    dayMeals.forEach(meal => {
+        const mealCalories = ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100);
+        if (mealTypes[meal.type]) {
+            mealTypes[meal.type].calories += mealCalories;
+        }
+        totalDayCalories += mealCalories;
+    });
+
+    if (totalDayCalories === 0) {
+        // Se non ci sono calorie, resetta la barra
+        Object.values(mealTypes).forEach(type => {
+            document.getElementById(type.bar).style.width = '0%';
+            document.getElementById(type.bar).textContent = '';
+            document.getElementById(type.perc).textContent = '0%';
+        });
+        return;
+    }
+
+    Object.values(mealTypes).forEach(type => {
+        const percentage = (type.calories / totalDayCalories) * 100;
+        const barElement = document.getElementById(type.bar);
+        const percElement = document.getElementById(type.perc);
+
+        barElement.style.width = `${percentage.toFixed(2)}%`;
+        barElement.textContent = percentage > 10 ? `${percentage.toFixed(0)}%` : '';
+        percElement.textContent = `${percentage.toFixed(0)}%`;
+    });
 }
 
 function updateMacroDistributionBar() {

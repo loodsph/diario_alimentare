@@ -178,8 +178,30 @@
                     <div class="text-white/80 font-medium">Fibre (g)</div>
                 </div>
             </div>
+
         </div>
         
+        <div class="glass-card p-8 rounded-3xl mb-10">
+            <h3 class="text-2xl font-bold mb-8 flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-teal-500 flex items-center justify-center">
+                    <i class="fas fa-chart-bar text-white text-sm"></i>
+                </div>
+                Distribuzione Calorie Pasti
+            </h3>
+            <div id="meal-distribution-bar" class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner">
+                <div id="meal-dist-colazione" class="meal-dist-bar bg-colazione transition-all duration-500"></div>
+                <div id="meal-dist-pranzo" class="meal-dist-bar bg-pranzo transition-all duration-500"></div>
+                <div id="meal-dist-cena" class="meal-dist-bar bg-cena transition-all duration-500"></div>
+                <div id="meal-dist-spuntino" class="meal-dist-bar bg-spuntino transition-all duration-500"></div>
+            </div>
+            <div class="flex justify-around text-xs mt-3 text-slate-400 px-1">
+                <span><i class="fas fa-circle text-colazione mr-1 text-[.6rem]"></i>Colazione: <span id="meal-dist-colazione-perc">0%</span></span>
+                <span><i class="fas fa-circle text-pranzo mr-1 text-[.6rem]"></i>Pranzo: <span id="meal-dist-pranzo-perc">0%</span></span>
+                <span><i class="fas fa-circle text-cena mr-1 text-[.6rem]"></i>Cena: <span id="meal-dist-cena-perc">0%</span></span>
+                <span><i class="fas fa-circle text-spuntino mr-1 text-[.6rem]"></i>Spuntino: <span id="meal-dist-spuntino-perc">0%</span></span>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
             <div class="lg:col-span-2">
                 <div class="glass-card p-8 rounded-3xl">
