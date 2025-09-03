@@ -261,13 +261,16 @@ body {
     box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.2);
 }
 
-.meal-actions {
+.meal-actions,
+.recipe-actions {
     display: none;
 }
 
 /* Mostra le azioni su hover (desktop) o quando l'elemento è attivo (mobile) */
 .meal-item.is-active .meal-actions,
-.meal-item:hover .meal-actions {
+.meal-item:hover .meal-actions,
+.recipe-card.is-active .recipe-actions,
+.recipe-card:hover .recipe-actions {
     display: block;
     animation: fadeInActions 0.2s ease-in-out forwards;
 }

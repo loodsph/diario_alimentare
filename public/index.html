@@ -378,9 +378,12 @@
                                     <div>
                                         <label class="block text-sm font-semibold text-slate-300 mb-3">Ingredienti</label>
                                         <div id="recipe-ingredients" class="space-y-3">
-                                            <div class="flex gap-3">
-                                                <input type="text" class="recipe-ingredient-name input-modern flex-1" placeholder="Ingrediente">
-                                                <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g">
+                                            <div class="ingredient-row flex gap-3 items-start">
+                                                <div class="flex-1 relative">
+                                                    <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off">
+                                                    <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
+                                                </div>
+                                                <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" aria-label="Quantità ingrediente">
                                                 <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn" aria-label="Rimuovi ingrediente">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
@@ -392,6 +395,20 @@
                                         </button>
                                     </div>
                                     
+                                    <div id="recipe-builder-macro-bar-container" class="mt-6 pt-6 border-t border-slate-700/50 hidden">
+                                        <p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro Ricetta (in tempo reale)</p>
+                                        <div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
+                                            <div id="recipe-builder-macro-proteins" class="transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: 0%;" title="Proteine"></div>
+                                            <div id="recipe-builder-macro-carbs" class="transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%;" title="Carboidrati"></div>
+                                            <div id="recipe-builder-macro-fats" class="transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 0%;" title="Grassi"></div>
+                                        </div>
+                                        <div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
+                                            <span>P: <span id="recipe-builder-macro-proteins-perc">0%</span></span>
+                                            <span>C: <span id="recipe-builder-macro-carbs-perc">0%</span></span>
+                                            <span>G: <span id="recipe-builder-macro-fats-perc">0%</span></span>
+                                        </div>
+                                    </div>
+
                                     <button id="save-recipe-btn" class="btn-modern btn-success w-full">
                                         <i class="fas fa-save mr-2"></i>
                                         Salva Ricetta

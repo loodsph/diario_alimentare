@@ -17,6 +17,7 @@ let selectedDate = new Date();
 let allMeals = [];
 let dailyMealsCache = {}; // Cache per i pasti giornalieri raggruppati e ordinati
 let recipes = [];
+let currentRecipeIngredientResults = [];
 let mealToEditId = null; // ID del pasto attualmente in modifica
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
@@ -238,7 +239,10 @@ function setupListeners() {
         // Rimuovi ingrediente da ricetta
         const removeIngredientBtn = target.closest('.remove-ingredient-btn');
         if (removeIngredientBtn) {
-            removeIngredientBtn.closest('.flex').remove();
+            // Usa .closest('.ingredient-row') per essere più specifico
+            removeIngredientBtn.closest('.ingredient-row').remove();
+            // Aggiorna la barra dopo aver rimosso un ingrediente
+            updateRecipeBuilderMacroBar();
         }
 
         // Gestione del "tap" sui pasti per mostrare i pulsanti su mobile
@@ -253,6 +257,20 @@ function setupListeners() {
                 } else {
                     document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
                     mealItem.classList.add('is-active');
+                }
+            }
+        }
+
+        // Gestione del "tap" sulle ricette per mostrare i pulsanti su mobile
+        const recipeCard = target.closest('.recipe-card');
+        if (recipeCard) {
+            const isActionButton = target.closest('.recipe-actions');
+            if (!isActionButton) {
+                if (recipeCard.classList.contains('is-active')) {
+                    recipeCard.classList.remove('is-active');
+                } else {
+                    document.querySelectorAll('.recipe-card.is-active').forEach(item => item.classList.remove('is-active'));
+                    recipeCard.classList.add('is-active');
                 }
             }
         }
@@ -307,6 +325,30 @@ function setupListeners() {
             }
         }
 
+        // Seleziona ingrediente dalla ricerca ricetta
+        const recipeIngredientItem = target.closest('.recipe-ingredient-item');
+        if (recipeIngredientItem) {
+            const food = currentRecipeIngredientResults.find(f => f.id === recipeIngredientItem.dataset.foodId);
+            const ingredientRow = recipeIngredientItem.closest('.ingredient-row');
+            if (food && ingredientRow) {
+                const nameInput = ingredientRow.querySelector('.recipe-ingredient-name');
+                const quantityInput = ingredientRow.querySelector('.recipe-ingredient-quantity');
+                const resultsContainer = ingredientRow.querySelector('.recipe-ingredient-results');
+
+                nameInput.value = food.name;
+                // Salva tutti i dati nutrizionali necessari per il calcolo in tempo reale
+                nameInput.dataset.foodId = food.id;
+                nameInput.dataset.proteins = food.proteins || 0;
+                nameInput.dataset.carbs = food.carbs || 0;
+                nameInput.dataset.fats = food.fats || 0;
+
+                resultsContainer.style.display = 'none';
+                quantityInput.focus();
+                // Aggiorna la barra quando un ingrediente viene selezionato
+                updateRecipeBuilderMacroBar();
+            }
+        }
+
         // Clic su una riga dello storico
         const historyRow = target.closest('.history-row');
         if(historyRow) {
@@ -333,6 +375,42 @@ function setupListeners() {
             }
         }
     });
+
+    // Aggiungo un listener di input delegato per gli ingredienti delle ricette
+    document.getElementById('recipe-ingredients').addEventListener('input', debounce(async (e) => {
+        const target = e.target;
+        if (target.classList.contains('recipe-ingredient-name')) {
+            const searchTerm = target.value.toLowerCase();
+            const resultsContainer = target.nextElementSibling; // Il div dei risultati
+            
+            // Pulisce l'ID se l'utente modifica il testo
+            target.dataset.foodId = '';
+
+            // Pulisce anche i dati nutrizionali
+            delete target.dataset.proteins;
+            delete target.dataset.carbs;
+            delete target.dataset.fats;
+
+            const itemRenderer = food => `
+                <div class="recipe-ingredient-item search-item" data-food-id="${food.id}">
+                    <div class="font-medium text-slate-200">${food.name}</div>
+                    <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
+                </div>
+            `;
+            if (searchTerm.length >= 2) {
+                currentRecipeIngredientResults = await handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer);
+            } else {
+                resultsContainer.style.display = 'none';
+            }
+            // Aggiorna la barra anche mentre si digita (se un ingrediente viene cancellato)
+            updateRecipeBuilderMacroBar();
+        }
+
+        // Ascolta anche i cambiamenti sulla quantità
+        if (target.classList.contains('recipe-ingredient-quantity')) {
+            updateRecipeBuilderMacroBar();
+        }
+    }, 300));
 
     // Gestione stato online/offline
     window.addEventListener('online', () => updateOnlineStatus(true));
@@ -606,10 +684,14 @@ async function saveRecipe() {
     if (servings <= 0) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
     
     const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div'))
-        .map(el => ({
-            name: el.querySelector('.recipe-ingredient-name').value.trim(),
-            quantity: parseFloat(el.querySelector('.recipe-ingredient-quantity').value)
-        }))
+        .map(el => {
+            const nameInput = el.querySelector('.recipe-ingredient-name');
+            return {
+                name: nameInput.value.trim(),
+                quantity: parseFloat(el.querySelector('.recipe-ingredient-quantity').value),
+                foodId: nameInput.dataset.foodId // Recupera l'ID salvato
+            };
+        })
         .filter(ing => ing.name && ing.quantity > 0);
 
     if (ingredients.length === 0) return showToast('Aggiungi almeno un ingrediente valido.', true);
@@ -626,20 +708,32 @@ async function saveRecipe() {
         let totalWeight = 0;
 
         const ingredientDataPromises = ingredients.map(async (ing) => {
-            const q = query(foodsCollection, where('name_lowercase', '==', ing.name.toLowerCase()), limit(1));
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-                const foodData = querySnapshot.docs[0].data();
-                const ratio = ing.quantity / 100;
-                totalNutrition.calories += (foodData.calories || 0) * ratio;
-                totalNutrition.proteins += (foodData.proteins || 0) * ratio;
-                totalNutrition.carbs += (foodData.carbs || 0) * ratio;
-                totalNutrition.fats += (foodData.fats || 0) * ratio;
-                totalNutrition.fibers += (foodData.fibers || 0) * ratio;
-                totalWeight += ing.quantity;
-                return { ...ing, found: true };
+            let foodData;
+            let found = false;
+
+            if (ing.foodId) { // Se abbiamo un ID, usiamolo! È più affidabile.
+                const foodDoc = await getDoc(doc(db, 'foods', ing.foodId));
+                if (foodDoc.exists()) {
+                    foodData = foodDoc.data();
+                    found = true;
+                }
+            } else { // Altrimenti, tentiamo la ricerca per nome come fallback
+                const q = query(foodsCollection, where('name_lowercase', '==', ing.name.toLowerCase()), limit(1));
+                const querySnapshot = await getDocs(q);
+                if (!querySnapshot.empty) {
+                    foodData = querySnapshot.docs[0].data();
+                    found = true;
+                }
             }
-            return { ...ing, found: false };
+
+            if (found) {
+                const ratio = ing.quantity / 100;
+                ['calories', 'proteins', 'carbs', 'fats', 'fibers'].forEach(key => {
+                    totalNutrition[key] += (foodData[key] || 0) * ratio;
+                });
+                totalWeight += ing.quantity;
+            }
+            return { ...ing, found };
         });
 
         const resolvedIngredients = await Promise.all(ingredientDataPromises);
@@ -902,34 +996,67 @@ function renderRecipes() {
         container.innerHTML = `<div class="text-center text-slate-400 py-8"><i class="fas fa-book-open text-3xl mb-3 opacity-50"></i><p>Nessuna ricetta salvata</p></div>`;
         return;
     }
-    container.innerHTML = recipes.map(recipe => `
-        <div class="recipe-card">
+    container.innerHTML = recipes.map(recipe => {
+        let macroBarHTML = '';
+        if (recipe.totalNutrition) {
+            const proteinCalories = (recipe.totalNutrition.proteins || 0) * 4;
+            const carbCalories = (recipe.totalNutrition.carbs || 0) * 4;
+            const fatCalories = (recipe.totalNutrition.fats || 0) * 9;
+            const totalMacroCalories = proteinCalories + carbCalories + fatCalories;
+
+            if (totalMacroCalories > 0) {
+                const proteinPerc = (proteinCalories / totalMacroCalories) * 100;
+                const carbPerc = (carbCalories / totalMacroCalories) * 100;
+                const fatPerc = (fatCalories / totalMacroCalories) * 100;
+
+                macroBarHTML = `
+                <div class="mt-4">
+                    <p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro (Calorie)</p>
+                    <div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
+                        <div class="transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: ${proteinPerc.toFixed(2)}%;" title="Proteine: ${proteinPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: ${carbPerc.toFixed(2)}%;" title="Carboidrati: ${carbPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: ${fatPerc.toFixed(2)}%;" title="Grassi: ${fatPerc.toFixed(0)}%"></div>
+                    </div>
+                    <div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
+                        <span>P: ${proteinPerc.toFixed(0)}%</span>
+                        <span>C: ${carbPerc.toFixed(0)}%</span>
+                        <span>G: ${fatPerc.toFixed(0)}%</span>
+                    </div>
+                </div>`;
+            }
+        }
+
+        return `
+        <div class="recipe-card" data-id="${recipe.id}">
             <div class="flex justify-between items-start">
                 <div>
                     <h4 class="font-bold text-lg text-slate-200 mb-3">${recipe.name} ${recipe.servings > 1 ? `(${recipe.servings} porzioni)` : ''}</h4>
                     <ul class="mt-2 text-sm text-slate-400 list-disc pl-5 space-y-1">
                         ${recipe.ingredients.map(ing => `<li>${ing.name}: ${ing.quantity}g</li>`).join('')}
                     </ul>
-                    ${recipe.totalNutrition && recipe.totalWeight && recipe.servings ? `
+                    ${(recipe.totalNutrition && recipe.totalWeight && recipe.servings) ? `
                     <div class="mt-4 pt-4 border-t border-slate-700">
                         <p class="font-semibold text-slate-300 mb-2">Per porzione (~${(recipe.totalWeight / recipe.servings).toFixed(0)}g):</p>
                         <p class="text-sm text-slate-400">
                             Cal: ${(recipe.totalNutrition.calories / recipe.servings).toFixed(0)} | P: ${(recipe.totalNutrition.proteins / recipe.servings).toFixed(1)}g | C: ${(recipe.totalNutrition.carbs / recipe.servings).toFixed(1)}g | G: ${(recipe.totalNutrition.fats / recipe.servings).toFixed(1)}g | F: ${(recipe.totalNutrition.fibers / recipe.servings).toFixed(1)}g
                         </p>
+                        ${macroBarHTML}
                     </div>
                     ` : ''}
                 </div>
-                <div class="flex space-x-3">
-                    <button class="btn-modern btn-primary !py-2 !px-3 use-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Usa ricetta">
-                        <i class="fas fa-plus"></i>
-                    </button>
-                    <button class="btn-modern btn-danger !py-2 !px-3 delete-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Elimina ricetta">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                <div class="recipe-actions">
+                    <div class="flex space-x-3">
+                        <button class="btn-modern btn-primary !py-2 !px-3 use-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Usa ricetta">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                        <button class="btn-modern btn-danger !py-2 !px-3 delete-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Elimina ricetta">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 }
 
 function renderWeeklyHistory() {
@@ -1443,16 +1570,20 @@ function executeConfirmAction() {
 function addIngredientRow() {
     const container = document.getElementById('recipe-ingredients');
     const newIngredient = document.createElement('div');
-    newIngredient.className = 'flex gap-3';
+    newIngredient.className = 'ingredient-row flex gap-3 items-start';
     newIngredient.innerHTML = `
-        <input type="text" class="recipe-ingredient-name input-modern flex-1" placeholder="Ingrediente">
-        <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g">
+        <div class="flex-1 relative">
+            <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off">
+            <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
+        </div>
+        <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" aria-label="Quantità ingrediente">
         <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn" aria-label="Rimuovi ingrediente">
             <i class="fas fa-trash"></i>
         </button>`;
     container.appendChild(newIngredient);
     newIngredient.querySelector('.recipe-ingredient-name').focus();
 }
+
 
 function resetAddMealForm() {
     document.getElementById('food-search').value = '';
@@ -1475,6 +1606,7 @@ function resetRecipeForm() {
     ingredientsContainer.innerHTML = ''; // Svuota tutto
     addIngredientRow(); // Aggiunge la prima riga vuota
     document.getElementById('recipe-name').focus();
+    updateRecipeBuilderMacroBar(); // Resetta la barra
 }
 
 // --- Funzioni di ricerca ---
@@ -1578,4 +1710,53 @@ function populateNewFoodForm(foodData) {
     
     showToast(`Dati di "${foodData.name}" importati. Controlla e salva.`);
     document.getElementById('new-food-name').focus();
+}
+
+function updateRecipeBuilderMacroBar() {
+    const container = document.getElementById('recipe-builder-macro-bar-container');
+    const ingredientRows = document.querySelectorAll('#recipe-ingredients .ingredient-row');
+
+    let totalProteinCalories = 0;
+    let totalCarbCalories = 0;
+    let totalFatCalories = 0;
+    let validIngredientsCount = 0;
+
+    ingredientRows.forEach(row => {
+        const nameInput = row.querySelector('.recipe-ingredient-name');
+        const quantityInput = row.querySelector('.recipe-ingredient-quantity');
+        
+        const quantity = parseFloat(quantityInput.value) || 0;
+        const proteins = parseFloat(nameInput.dataset.proteins);
+        const carbs = parseFloat(nameInput.dataset.carbs);
+        const fats = parseFloat(nameInput.dataset.fats);
+
+        if (quantity > 0 && !isNaN(proteins) && !isNaN(carbs) && !isNaN(fats)) {
+            validIngredientsCount++;
+            const ratio = quantity / 100;
+            totalProteinCalories += proteins * 4 * ratio;
+            totalCarbCalories += carbs * 4 * ratio;
+            totalFatCalories += fats * 9 * ratio;
+        }
+    });
+
+    if (validIngredientsCount === 0) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    container.classList.remove('hidden');
+
+    const totalMacroCalories = totalProteinCalories + totalCarbCalories + totalFatCalories;
+
+    const proteinPerc = totalMacroCalories > 0 ? (totalProteinCalories / totalMacroCalories) * 100 : 0;
+    const carbPerc = totalMacroCalories > 0 ? (totalCarbCalories / totalMacroCalories) * 100 : 0;
+    const fatPerc = totalMacroCalories > 0 ? (totalFatCalories / totalMacroCalories) * 100 : 0;
+
+    document.getElementById('recipe-builder-macro-proteins').style.width = `${proteinPerc.toFixed(2)}%`;
+    document.getElementById('recipe-builder-macro-carbs').style.width = `${carbPerc.toFixed(2)}%`;
+    document.getElementById('recipe-builder-macro-fats').style.width = `${fatPerc.toFixed(2)}%`;
+
+    document.getElementById('recipe-builder-macro-proteins-perc').textContent = `${proteinPerc.toFixed(0)}%`;
+    document.getElementById('recipe-builder-macro-carbs-perc').textContent = `${carbPerc.toFixed(0)}%`;
+    document.getElementById('recipe-builder-macro-fats-perc').textContent = `${fatPerc.toFixed(0)}%`;
 }
