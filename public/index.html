@@ -567,6 +567,32 @@
         </div>
     </div>
 
+    <div id="edit-meal-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="edit-meal-title">
+        <div class="modal-content p-8 max-w-md w-full mx-4">
+            <h3 id="edit-meal-title" class="text-2xl font-bold mb-6 text-center text-white">Modifica Pasto</h3>
+            <p id="edit-meal-name" class="text-center text-lg text-slate-300 mb-8"></p>
+            <div class="space-y-6">
+                <div>
+                    <label for="edit-meal-quantity" class="block text-sm font-semibold text-slate-300 mb-3">Quantità (g)</label>
+                    <input type="number" id="edit-meal-quantity" class="input-modern w-full" placeholder="100">
+                </div>
+                <div>
+                    <label for="edit-meal-type" class="block text-sm font-semibold text-slate-300 mb-3">Tipo Pasto</label>
+                    <select id="edit-meal-type" class="input-modern w-full">
+                        <option value="🌅 Colazione">🌅 Colazione</option>
+                        <option value="🍽️ Pranzo">🍽️ Pranzo</option>
+                        <option value="🌙 Cena">🌙 Cena</option>
+                        <option value="🍪 Spuntino">🍪 Spuntino</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-8">
+                <button id="cancel-edit-meal-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
+                <button id="save-edit-meal-btn" class="btn-modern btn-primary flex-1">Salva Modifiche</button>
+            </div>
+        </div>
+    </div>
+
     <div id="scanner-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
         <div class="modal-content p-8 max-w-md w-full mx-4">
             <div class="flex justify-between items-center mb-6">

@@ -261,6 +261,28 @@ body {
     box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.2);
 }
 
+.meal-actions {
+    display: none;
+}
+
+/* Mostra le azioni su hover (desktop) o quando l'elemento è attivo (mobile) */
+.meal-item.is-active .meal-actions,
+.meal-item:hover .meal-actions {
+    display: block;
+    animation: fadeInActions 0.2s ease-in-out forwards;
+}
+
+@keyframes fadeInActions {
+    from {
+        opacity: 0;
+        transform: translateX(5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
 /* Toast notifications */
 .toast {
     background: rgba(15, 23, 42, 0.95);

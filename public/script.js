@@ -1,7 +1,7 @@
 // Importa le funzioni necessarie da Firebase SDK
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { debounce, getDayBounds, formatDate, getMealTimestamp } from './modules/utils.js';
 import { showToast, triggerFlashAnimation } from './modules/uiHelpers.js';
 import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
@@ -17,6 +17,7 @@ let selectedDate = new Date();
 let allMeals = [];
 let dailyMealsCache = {}; // Cache per i pasti giornalieri raggruppati e ordinati
 let recipes = [];
+let mealToEditId = null; // ID del pasto attualmente in modifica
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
 let waterCount = 0;
@@ -122,6 +123,11 @@ function setupListeners() {
     document.getElementById('add-meal-btn').addEventListener('click', addMeal);
 
     // Modale di conferma generico
+    document.getElementById('save-edit-meal-btn').addEventListener('click', saveMealChanges);
+    document.getElementById('cancel-edit-meal-btn').addEventListener('click', () => {
+        document.getElementById('edit-meal-modal').classList.add('hidden');
+    });
+
     document.getElementById('confirm-action-btn').addEventListener('click', executeConfirmAction);
     document.getElementById('cancel-confirmation-btn').addEventListener('click', hideConfirmationModal);
 
@@ -178,8 +184,13 @@ function setupListeners() {
             searchResults.style.display = 'none';
         }
         const lookupResults = document.getElementById('food-lookup-results-list');
-        if (lookupResults.style.display === 'block' && !target.closest('#food-lookup-wrapper')) {
+        if (lookupResults.style.display === 'block' && !target.closest('#food-lookup-wrapper')) { 
             lookupResults.style.display = 'none';
+        }
+
+        // Se clicco fuori da un pasto attivo, lo disattivo
+        if (!target.closest('.meal-item')) {
+            document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
         }
 
         // Sezioni collassabili
@@ -197,11 +208,34 @@ function setupListeners() {
             removeIngredientBtn.closest('.flex').remove();
         }
 
+        // Gestione del "tap" sui pasti per mostrare i pulsanti su mobile
+        const mealItem = target.closest('.meal-item');
+        if (mealItem) {
+            const isActionButton = target.closest('.meal-actions');
+            // Solo se NON sto cliccando un pulsante di azione, gestisco lo stato attivo
+            if (!isActionButton) {
+                // Se il pasto cliccato è già attivo, lo disattivo, altrimenti attivo quello nuovo e disattivo gli altri.
+                if (mealItem.classList.contains('is-active')) {
+                    mealItem.classList.remove('is-active');
+                } else {
+                    document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
+                    mealItem.classList.add('is-active');
+                }
+            }
+        }
+
         // Elimina un pasto
         const deleteMealBtn = target.closest('.delete-meal-btn');
         if (deleteMealBtn) {
             const mealId = deleteMealBtn.dataset.mealId;
             if (mealId) deleteMeal(mealId);
+        }
+
+        // Modifica un pasto
+        const editMealBtn = target.closest('.edit-meal-btn');
+        if (editMealBtn) {
+            const mealId = editMealBtn.dataset.mealId;
+            if (mealId) openEditMealModal(mealId);
         }
         
         // Elimina una ricetta
@@ -299,6 +333,11 @@ function updateOnlineStatus(online) {
     document.getElementById('offline-indicator').classList.toggle('show', !online);
     if (online) {
         showToast('Sei di nuovo online!', false);
+        // Quando torno online, nascondo i pulsanti dei pasti che potrebbero essere rimasti attivi
+        // per evitare stati visivi incoerenti.
+        setTimeout(() => {
+            document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
+        }, 1000);
     } else {
         showToast('Sei offline. Alcune funzionalità potrebbero non essere disponibili.', true);
     }
@@ -446,6 +485,35 @@ async function deleteMeal(mealId) {
             showToast("Errore durante l'eliminazione.", true);
         }
     });
+}
+
+async function saveMealChanges() {
+    if (!isOnline) return showToast("Sei offline. Impossibile salvare.", true);
+    if (!mealToEditId) return;
+
+    const newQuantity = parseFloat(document.getElementById('edit-meal-quantity').value);
+    const newType = document.getElementById('edit-meal-type').value;
+
+    if (isNaN(newQuantity) || newQuantity <= 0) {
+        return showToast('Inserisci una quantità valida.', true);
+    }
+
+    const mealRef = doc(db, `users/${userId}/meals`, mealToEditId);
+    const newDate = getMealTimestamp(newType, selectedDate);
+
+    try {
+        await updateDoc(mealRef, {
+            quantity: newQuantity,
+            type: newType,
+            date: Timestamp.fromDate(newDate)
+        });
+        showToast('Pasto aggiornato con successo!');
+        document.getElementById('edit-meal-modal').classList.add('hidden');
+        mealToEditId = null;
+    } catch (error) {
+        console.error("Errore aggiornamento pasto:", error);
+        showToast("Errore durante l'aggiornamento del pasto.", true);
+    }
 }
 
 async function addNewFood() {
@@ -762,9 +830,16 @@ function renderSelectedDayMeals() {
                                 Cal: ${calculated.calories.toFixed(0)} | P: ${calculated.proteins.toFixed(1)}g | C: ${calculated.carbs.toFixed(1)}g | G: ${calculated.fats.toFixed(1)}g | F: ${calculated.fibers.toFixed(1)}g
                             </p>
                         </div>
-                        <button class="btn-modern btn-danger !py-2 !px-3 delete-meal-btn" data-meal-id="${meal.id}" aria-label="Elimina pasto">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                        <div class="meal-actions">
+                            <div class="flex items-center gap-2">
+                                <button class="btn-modern bg-slate-600 !py-2 !px-3 edit-meal-btn" data-meal-id="${meal.id}" aria-label="Modifica pasto">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>
+                                <button class="btn-modern btn-danger !py-2 !px-3 delete-meal-btn" data-meal-id="${meal.id}" aria-label="Elimina pasto">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>  
+                        </div>
                     </div>
                 </div>`;
             }).join('');
@@ -1171,6 +1246,23 @@ function listenToWaterHistory() {
 }
 // ... (altre funzioni di UI come modali, form resets, grafici, etc.)
 // ... (tutte le altre funzioni da qui in poi)
+
+function openEditMealModal(mealId) {
+    const meal = allMeals.find(m => m.id === mealId);
+    if (!meal) {
+        showToast("Pasto non trovato. Potrebbe essere stato eliminato.", true);
+        return;
+    }
+
+    mealToEditId = mealId;
+
+    document.getElementById('edit-meal-name').textContent = meal.name;
+    document.getElementById('edit-meal-quantity').value = meal.quantity;
+    document.getElementById('edit-meal-type').value = meal.type;
+
+    document.getElementById('edit-meal-modal').classList.remove('hidden');
+    document.getElementById('edit-meal-quantity').focus();
+}
 
 function openGoalsModal() {
     updateCalculatedCalories(); // Calcola subito all'apertura
