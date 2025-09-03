@@ -1794,16 +1794,63 @@ function startScanner(onDecode) {
     document.getElementById('barcode-file-input').click();
 }
 
+/**
+ * Ridimensiona un'immagine per ottimizzare le performance e l'uso della memoria,
+ * prevenendo crash su mobile con foto ad alta risoluzione.
+ * @param {File} file - Il file immagine originale.
+ * @param {number} maxWidth - La larghezza massima desiderata per l'immagine.
+ * @returns {Promise<File>} Una promise che si risolve con il nuovo file immagine ridimensionato.
+ */
+async function resizeImage(file, maxWidth) {
+    // Controlla se l'API createImageBitmap è supportata per un'elaborazione più efficiente.
+    if (typeof createImageBitmap === 'undefined') {
+        // Fallback al metodo con Image() se l'API non è disponibile (es. browser più vecchi).
+        console.warn("createImageBitmap non supportato, uso il fallback.");
+        return resizeImageFallback(file, maxWidth);
+    }
+
+    try {
+        const imageBitmap = await createImageBitmap(file, {
+            resizeQuality: 'high',
+            resizeWidth: maxWidth
+        });
+
+        const canvas = document.createElement('canvas');
+        canvas.width = imageBitmap.width;
+        canvas.height = imageBitmap.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imageBitmap, 0, 0);
+
+        // Chiudi il bitmap per liberare memoria
+        imageBitmap.close();
+
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, file.type, 0.9));
+        if (!blob) throw new Error('Creazione Blob per il ridimensionamento fallita.');
+
+        return new File([blob], file.name, { type: file.type, lastModified: Date.now() });
+    } catch (error) {
+        console.error("Errore durante il ridimensionamento con createImageBitmap:", error);
+        // Se l'API fallisce per qualche motivo, prova con il metodo di fallback.
+        return resizeImageFallback(file, maxWidth);
+    }
+}
+
 async function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
 
     const modal = document.getElementById('scanner-modal');
+    const feedback = document.getElementById('scanner-feedback');
     modal.classList.remove('hidden');
+    feedback.textContent = 'Elaborazione immagine...';
     
-    const html5QrCode = new Html5Qrcode("scanner-container");
     try {
-        const decodedText = await html5QrCode.scanFile(file, false);
+        // Ridimensiona l'immagine per prevenire crash dovuti alla memoria
+        const imageToScan = await resizeImage(file, 800); // Ridimensionamento più aggressivo
+
+        const html5QrCode = new Html5Qrcode("scanner-container", { verbose: false });
+        const decodedText = await html5QrCode.scanFile(imageToScan, false);
+        
         showToast(`Codice trovato!`);
         if (onDecodeCallback) {
             onDecodeCallback(decodedText);
@@ -1816,6 +1863,50 @@ async function handleFileSelect(event) {
         onDecodeCallback = null;
         event.target.value = ''; // Permette di ricaricare lo stesso file
     }
+}
+
+/**
+ * Metodo di fallback per il ridimensionamento delle immagini per browser meno recenti.
+ * @param {File} file - Il file immagine originale.
+ * @param {number} maxWidth - La larghezza massima desiderata per l'immagine.
+ * @returns {Promise<File>} Una promise che si risolve con il nuovo file immagine ridimensionato.
+ */
+function resizeImageFallback(file, maxWidth) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(file);
+
+        img.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+
+            if (width > maxWidth) {
+                height = (maxWidth / width) * height;
+                width = maxWidth;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+                // Suggerisce al browser di liberare la memoria del canvas
+                canvas.width = 0;
+                canvas.height = 0;
+
+                if (blob) resolve(new File([blob], file.name, { type: file.type, lastModified: Date.now() }));
+                else reject(new Error('Creazione Blob per il ridimensionamento fallita (fallback).'));
+            }, file.type, 0.9);
+        };
+
+        img.onerror = (err) => {
+            URL.revokeObjectURL(objectUrl);
+            reject(err);
+        };
+        img.src = objectUrl;
+    });
 }
 
 function stopScanner() {
