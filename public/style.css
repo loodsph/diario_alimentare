@@ -275,6 +275,15 @@ body {
     animation: fadeInActions 0.2s ease-in-out forwards;
 }
 
+/* Animazione per il cambio giorno */
+.day-meals-container {
+    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+}
+.day-meals-container.is-updating {
+    opacity: 0;
+    transform: translateY(10px);
+}
+
 @keyframes fadeInActions {
     from {
         opacity: 0;

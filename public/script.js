@@ -106,12 +106,7 @@ function setupListeners() {
     document.getElementById('prev-day').addEventListener('click', () => changeDay(-1));
     document.getElementById('next-day').addEventListener('click', () => changeDay(1));
     document.getElementById('today-btn').addEventListener('click', () => changeDay(0));
-    document.getElementById('date-picker').addEventListener('change', (e) => {
-        const [year, month, day] = e.target.value.split('-').map(Number);
-        selectedDate = new Date(year, month - 1, day);
-        listenToWaterData();
-        updateAllUI();
-    });
+    document.getElementById('date-picker').addEventListener('change', handleDateChange);
 
     // Modali e Form
     document.getElementById('edit-goals-btn').addEventListener('click', openGoalsModal);
@@ -1401,14 +1396,34 @@ function initSortableLists() {
 
 // --- FUNZIONI UTILITY E HELPERS ---
 
+async function handleDayChange() {
+    const container = document.getElementById('day-meals-container');
+    container.classList.add('is-updating');
+
+    // Attendi che l'animazione di fade-out sia visibile
+    await new Promise(resolve => setTimeout(resolve, 150));
+
+    listenToWaterData();
+    updateAllUI();
+
+    // Rimuovi la classe per far apparire il nuovo contenuto con un fade-in
+    container.classList.remove('is-updating');
+}
+
 function changeDay(offset) {
     if (offset === 0) { // Vai a oggi
         selectedDate = new Date();
     } else {
         selectedDate.setDate(selectedDate.getDate() + offset);
     }
-    listenToWaterData();
-    updateAllUI();
+    handleDayChange();
+}
+
+function handleDateChange(e) {
+    const [year, month, day] = e.target.value.split('-').map(Number);
+    // Imposta l'ora a mezzogiorno per evitare problemi con il fuso orario
+    selectedDate = new Date(year, month - 1, day, 12);
+    handleDayChange();
 }
 
 function resetAppData() {
