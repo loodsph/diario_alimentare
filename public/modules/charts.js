@@ -60,38 +60,28 @@ export function initCharts(calorieCtx, macroCtx) {
     });
 }
 
-export function updateCharts(allMeals, selectedDate) {
+export function updateCharts(dailyTotalsCache, selectedDate) {
     if (!calorieChart || !macroChart) return;
 
     // Grafico calorie (ultimi 7 giorni)
     const calorieLabels = [];
     const calorieData = [];
     for (let i = 6; i >= 0; i--) {
-        const date = new Date();
+        const date = new Date(); // Inizia da oggi
         date.setDate(date.getDate() - i);
-        const { start, end } = getDayBounds(date);
-        const dayCalories = allMeals
-            .filter(meal => meal.jsDate >= start && meal.jsDate <= end)
-            .reduce((sum, meal) => sum + ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100), 0);
+        const dateKey = date.toISOString().split('T')[0];
+        const dayTotals = dailyTotalsCache[dateKey];
+        const dayCalories = dayTotals ? dayTotals.calories : 0;
         calorieLabels.push(date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }));
         calorieData.push(dayCalories.toFixed(0));
     }
     calorieChart.data.labels = calorieLabels;
     calorieChart.data.datasets[0].data = calorieData;
     calorieChart.update();
-
+    
     // Grafico macro (giorno selezionato)
-    const { start, end } = getDayBounds(selectedDate);
-    const dayTotals = allMeals
-        .filter(meal => meal.jsDate >= start && meal.jsDate <= end)
-        .reduce((acc, meal) => {
-            const ratio = (Number(meal.quantity) || 0) / 100;
-            acc.proteins += (Number(meal.proteins) || 0) * ratio;
-            acc.carbs += (Number(meal.carbs) || 0) * ratio;
-            acc.fats += (Number(meal.fats) || 0) * ratio;
-            return acc;
-        }, { proteins: 0, carbs: 0, fats: 0 });
-
+    const selectedDateKey = selectedDate.toISOString().split('T')[0];
+    const dayTotals = dailyTotalsCache[selectedDateKey] || { proteins: 0, carbs: 0, fats: 0 };
     macroChart.data.datasets[0].data = [dayTotals.proteins, dayTotals.carbs, dayTotals.fats];
     macroChart.update();
 }

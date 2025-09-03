@@ -16,6 +16,7 @@ let selectedFood = null;
 let selectedDate = new Date();
 let allMeals = [];
 let dailyMealsCache = {}; // Cache per i pasti giornalieri raggruppati e ordinati
+let dailyTotalsCache = {}; // Cache per i totali nutrizionali giornalieri
 let recipes = [];
 let currentRecipeIngredientResults = [];
 let mealToEditId = null; // ID del pasto attualmente in modifica
@@ -477,6 +478,24 @@ async function loadInitialData() {
             }).filter(Boolean); // Rimuove tutti i pasti scartati (null)
 
             dailyMealsCache = {}; // Invalida la cache quando i dati dei pasti cambiano
+
+            // Popola la cache dei totali giornalieri
+            dailyTotalsCache = {};
+            allMeals.forEach(meal => {
+                const dateKey = meal.jsDate.toISOString().split('T')[0];
+                if (!dailyTotalsCache[dateKey]) {
+                    dailyTotalsCache[dateKey] = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+                }
+                const ratio = (Number(meal.quantity) || 0) / 100;
+                const totals = dailyTotalsCache[dateKey];
+                totals.calories += (Number(meal.calories) || 0) * ratio;
+                totals.proteins += (Number(meal.proteins) || 0) * ratio;
+                totals.carbs += (Number(meal.carbs) || 0) * ratio;
+                totals.fats += (Number(meal.fats) || 0) * ratio;
+                totals.fibers += (Number(meal.fibers) || 0) * ratio;
+            });
+
+
             updateAllUI();
         }, (error) => {
             console.error("Errore nel listener dei pasti (onSnapshot):", error);
@@ -1066,19 +1085,8 @@ function renderWeeklyHistory() {
     for (let i = 6; i >= 0; i--) {
         const date = new Date();
         date.setDate(date.getDate() - i);
-        const { start, end } = getDayBounds(date);
-        const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
-        
-        const totals = dayMeals.reduce((acc, meal) => {
-            const ratio = (Number(meal.quantity) || 0) / 100;
-            acc.calories += (Number(meal.calories) || 0) * ratio;
-            acc.proteins += (Number(meal.proteins) || 0) * ratio;
-            acc.carbs += (Number(meal.carbs) || 0) * ratio;
-            acc.fats += (Number(meal.fats) || 0) * ratio;
-            acc.fibers += (Number(meal.fibers) || 0) * ratio;
-            return acc;
-        }, { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 });
-
+        const dateKey = date.toISOString().split('T')[0];
+        const totals = dailyTotalsCache[dateKey] || { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
         const isToday = date.toDateString() === new Date().toDateString();
         const dateClass = isToday ? 'font-bold text-indigo-400' : '';
         
@@ -1092,26 +1100,18 @@ function renderWeeklyHistory() {
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.carbs.toFixed(1)}g</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.fats.toFixed(1)}g</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.fibers.toFixed(1)}g</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${waterHistory[date.toISOString().split('T')[0]] || 0} bicchieri</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-400">${dayMeals.length} pasti</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${waterHistory[dateKey] || 0} bicchieri</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-400">${dailyMealsCache[dateKey] ? Object.values(dailyMealsCache[dateKey]).length : 0} pasti</td>
         `;
         container.appendChild(row);
     }
 }
 
 function updateNutritionProgress() {
+    const dateKey = selectedDate.toISOString().split('T')[0];
+    const totals = dailyTotalsCache[dateKey] || { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
     const { start, end } = getDayBounds(selectedDate);
     const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
-    
-    const totals = dayMeals.reduce((acc, meal) => {
-        const ratio = (Number(meal.quantity) || 0) / 100;
-        acc.calories += (Number(meal.calories) || 0) * ratio;
-        acc.proteins += (Number(meal.proteins) || 0) * ratio;
-        acc.carbs += (Number(meal.carbs) || 0) * ratio;
-        acc.fats += (Number(meal.fats) || 0) * ratio;
-        acc.fibers += (Number(meal.fibers) || 0) * ratio;
-        return acc;
-    }, { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 });
     
     // Aggiorna i totali principali
     const updateAndAnimateTotal = (id, value, decimals = 0) => {
