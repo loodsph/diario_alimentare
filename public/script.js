@@ -71,7 +71,7 @@ window.onload = () => {
                     document.getElementById('calorie-chart').getContext('2d'),
                     document.getElementById('macro-chart').getContext('2d')
                 );
-                updateCharts(allMeals, selectedDate);
+                updateCharts(dailyTotalsCache, selectedDate);
 
                 appContainer.classList.remove('hidden');
             } catch (error) {
@@ -954,7 +954,7 @@ function updateAllUI() {
     updateDateDisplay();
     renderSelectedDayMeals();
     renderWeeklyHistory();
-    updateCharts(allMeals, selectedDate);
+    updateCharts(dailyTotalsCache, selectedDate);
 }
 
 function updateUserUI(user) {
@@ -1157,13 +1157,14 @@ function renderRecipes() {
 function renderWeeklyHistory() {
     const container = document.getElementById('weekly-history');
     container.innerHTML = '';
+    const today = new Date(); // Fissa "oggi" all'inizio per coerenza
     
     for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
+        const date = new Date(today); // Crea una copia di "oggi"
+        date.setDate(today.getDate() - i); // Sottrai i giorni dalla data fissata
         const dateKey = date.toISOString().split('T')[0];
         const totals = dailyTotalsCache[dateKey] || { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
-        const isToday = date.toDateString() === new Date().toDateString();
+        const isToday = i === 0; // Modo più semplice e affidabile per verificare se è oggi
         const dateClass = isToday ? 'font-bold text-indigo-400' : '';
         
         const row = document.createElement('tr');
