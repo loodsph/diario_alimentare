@@ -169,6 +169,7 @@ function setupListeners() {
     });
     document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
     document.getElementById('camera-select').addEventListener('change', handleCameraChange);
+    document.getElementById('toggle-flash-btn').addEventListener('click', toggleFlash);
     document.getElementById('scan-from-file-btn').addEventListener('click', () => document.getElementById('barcode-file-input').click());
     document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
 
@@ -1930,13 +1931,8 @@ async function startScanner(onDecode) {
             if (!availableCameras || availableCameras.length === 0) {
                 throw new Error("Nessuna fotocamera trovata.");
             }
-            // Cerca e imposta la fotocamera posteriore come predefinita SOLO la prima volta.
-            const rearCameraIndex = availableCameras.findIndex(camera => 
-                camera.label.toLowerCase().includes('back') || 
-                camera.label.toLowerCase().includes('rear') ||
-                camera.label.toLowerCase().includes('ambiente')
-            );
-            currentCameraIndex = rearCameraIndex !== -1 ? rearCameraIndex : 0;
+            // Imposta la seconda fotocamera (indice 4) come predefinita, se esiste.
+            currentCameraIndex = availableCameras.length > 3 ? 3 : 0;
         }
 
         // Popola il dropdown delle fotocamere
@@ -1987,8 +1983,10 @@ async function startScanningWithCurrentCamera() {
         qrbox: { width: 250, height: 150 }
     };
 
-    const onScanSuccess = (decodedText, decodedResult) => {
-        stopScanner();
+    const onScanSuccess = async (decodedText, decodedResult) => {
+        // Chiama la funzione centralizzata per il feedback
+        await triggerSuccessFeedback();
+        await stopScanner();
         showToast(`Codice trovato!`);
         if (onDecodeCallback) {
             onDecodeCallback(decodedText);
@@ -2012,6 +2010,33 @@ async function startScanningWithCurrentCamera() {
     }
 }
 
+async function toggleFlash() {
+    if (!html5QrCode || !html5QrCode.isScanning) {
+        return showToast("Lo scanner non è attivo.", true);
+    }
+
+    try {
+        const capabilities = html5QrCode.getRunningTrackCapabilities();
+        const settings = html5QrCode.getRunningTrackSettings();
+
+        if (!capabilities.torch) {
+            return showToast("Il tuo dispositivo non supporta il controllo del flash.", true);
+        }
+
+        const newFlashState = !settings.torch;
+        await html5QrCode.applyVideoConstraints({
+            advanced: [{ torch: newFlashState }]
+        });
+
+        showToast(`Flash ${newFlashState ? 'attivato' : 'disattivato'}.`);
+        document.getElementById('toggle-flash-btn').classList.toggle('btn-primary', newFlashState);
+        document.getElementById('toggle-flash-btn').classList.toggle('bg-slate-600', !newFlashState);
+    } catch (err) {
+        console.error("Errore nel controllare il flash:", err);
+        showToast("Impossibile controllare il flash.", true);
+    }
+}
+
 async function handleCameraChange(event) {
     // Aggiorna l'indice della fotocamera in base alla selezione dell'utente
     currentCameraIndex = event.target.selectedIndex;
@@ -2025,13 +2050,17 @@ async function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
 
+    showToast('Elaborazione immagine...');
+
     if (!html5QrCode) {
         html5QrCode = new window.Html5Qrcode("scanner-reader");
     }
 
     try {
         const decodedText = await html5QrCode.scanFile(file, false);
-        stopScanner();
+        // Chiama la funzione centralizzata per il feedback
+        await triggerSuccessFeedback();
+        await stopScanner();
         showToast(`Codice trovato!`);
         if (onDecodeCallback) {
             onDecodeCallback(decodedText);
@@ -2045,6 +2074,34 @@ async function handleFileSelect(event) {
     }
 }
 
+/**
+ * Gestisce il feedback di successo (vibrazione e animazione) in modo centralizzato.
+ */
+async function triggerSuccessFeedback() {
+    // Esegue l'animazione visiva
+    await playScanSuccessAnimation('scanner-reader');
+}
+
+/**
+ * Applica un'animazione a un elemento e restituisce una Promise che si risolve
+ * quando l'animazione è terminata.
+ * @param {string} elementId L'ID dell'elemento da animare.
+ * @returns {Promise<void>}
+ */
+function playScanSuccessAnimation(elementId) {
+    return new Promise(resolve => {
+        const element = document.getElementById(elementId);
+        if (!element) return resolve();
+
+        const onAnimationEnd = () => {
+            element.classList.remove('flash-scan-success');
+            resolve();
+        };
+        element.addEventListener('animationend', onAnimationEnd, { once: true });
+        element.classList.add('flash-scan-success');
+    });
+}
+
 async function stopScanner() {
     const scannerModal = document.getElementById('scanner-modal');
     scannerModal.classList.add('hidden');
@@ -2052,6 +2109,10 @@ async function stopScanner() {
     if (html5QrCode && html5QrCode.isScanning) {
         try {
             await html5QrCode.stop();
+            // Resetta lo stato del pulsante del flash quando lo scanner si ferma
+            const flashBtn = document.getElementById('toggle-flash-btn');
+            flashBtn.classList.remove('btn-primary');
+            flashBtn.classList.add('bg-slate-600');
         } catch (error) {
             console.error("Fallimento nel fermare lo scanner.", error);
         }
