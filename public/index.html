@@ -651,19 +651,25 @@
                     <i class="fas fa-times text-2xl"></i>
                 </button>
             </div>
-            <div id="scanner-container" class="bg-slate-900 rounded-lg overflow-hidden aspect-square mb-4 w-full">
+            <div id="scanner-container" class="bg-slate-900 rounded-lg overflow-hidden mb-4 w-full">
                 <!-- Il video feed della fotocamera verrà iniettato qui -->
             </div>
             <div id="scanner-feedback" class="text-center text-slate-300 mb-4">
                 Punta la fotocamera verso un codice a barre...
             </div>
-            <button id="scan-from-file-btn" class="btn-modern bg-slate-600 w-full text-white">
-                <i class="fas fa-image mr-2"></i>
-                O carica un'immagine
-            </button>
+            <div class="flex flex-col gap-4">
+                <button id="focus-scanner-btn" class="btn-modern bg-slate-600 w-full text-white">
+                    <i class="fas fa-crosshairs mr-2"></i>
+                    Metti a fuoco
+                </button>
+                <button id="scan-from-file-btn" class="btn-modern bg-slate-700 w-full text-white">
+                    <i class="fas fa-image mr-2"></i>
+                    O carica un'immagine
+                </button>
             </div>
         </div>
     </div>
+
     
     <input type="file" id="barcode-file-input" accept="image/*" capture class="hidden">
     

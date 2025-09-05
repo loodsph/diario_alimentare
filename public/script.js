@@ -53,6 +53,9 @@ window.onload = () => {
         const loginScreen = document.getElementById('login-screen');
         const appContainer = document.getElementById('app');
         if (user) {
+            // Meccanismo per pulire la cache ad ogni avvio (utile in fase di testing)
+            clearCachesForTesting();
+
             isAppInitialized = false; // Resetta il flag ad ogni login
             try {
                 // Resetta la data a oggi ad ogni login/refresh per coerenza.
@@ -78,6 +81,12 @@ window.onload = () => {
                 
                 // L'inizializzazione è completata con successo.
                 isAppInitialized = true;
+
+                // Avvia i listener in tempo reale SOLO ORA che l'app è pronta.
+                // Questo previene il doppio caricamento e le race condition.
+                listenToMeals();
+                listenToRecipes();
+                listenToWaterHistory();
 
                 appContainer.classList.remove('hidden');
             } catch (error) {
@@ -151,17 +160,16 @@ function setupListeners() {
 
     // Scanner
     document.getElementById('scan-barcode-btn').addEventListener('click', () => {
-        onDecodeCallback = barcode => fetchFoodFromBarcode(barcode, populateMealForm);
-        document.getElementById('barcode-file-input').click();
+        startCameraScanner(barcode => fetchFoodFromBarcode(barcode, populateMealForm));
     });
     document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => {
-        onDecodeCallback = barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm);
-        document.getElementById('barcode-file-input').click();
+        startCameraScanner(barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm));
     });
     document.getElementById('scan-from-file-btn').addEventListener('click', () => {
         document.getElementById('barcode-file-input').click();
     });
     document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
+    document.getElementById('focus-scanner-btn').addEventListener('click', triggerFocus);
     document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
     foodSearchInput.addEventListener('input', debounce(async (e) => {
         const searchTerm = e.target.value.toLowerCase();
@@ -508,40 +516,29 @@ function updateOnlineStatus(online) {
 
 async function loadInitialData() {
     if (!userId) return;
+
     try {
-        // 1. Caricamento iniziale con getDocs per garantire che i dati siano presenti
-        // prima di procedere. Questo previene race conditions al primo avvio.
+        // 1. Carica tutti i dati necessari in parallelo per velocizzare l'avvio.
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
         const recipesQuery = collection(db, `users/${userId}/recipes`);
 
-        const [mealsSnapshot, recipesSnapshot] = await Promise.all([
+        const [mealsSnapshot, recipesSnapshot, _] = await Promise.all([
             getDocs(mealsQuery),
             getDocs(recipesQuery),
-            loadNutritionGoals() // Carica anche gli obiettivi
+            loadNutritionGoals() // Carica gli obiettivi in parallelo
         ]);
 
         allMeals = mealsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
-        allMeals.sort((a, b) => b.jsDate - a.jsDate);
-        
         recipes = recipesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // Calcola i totali una volta dopo il caricamento iniziale
-        recalculateDailyTotals();
-
-        // 2. Ora che i dati iniziali sono caricati, avvia i listener in tempo reale (onSnapshot)
-        // per le modifiche successive.
-        listenToMeals();
-        listenToRecipes();
-        listenToWaterData(); // Spostato qui per coerenza
-        listenToWaterHistory(); // Spostato qui per coerenza
-
+        // Ordina i pasti e calcola i totali una sola volta dopo il caricamento iniziale.
+        processInitialMeals();
     } catch (error) {
-        console.error("Errore caricamento dati iniziali:", error);
+        console.error("Errore durante il caricamento dei dati iniziali:", error);
         showToast("Errore nel caricare i dati.", true);
-        // Rilancia l'errore per farlo catturare dal blocco try/catch principale
-        // che gestisce la visualizzazione del messaggio "Errore durante il caricamento dell'app".
+        // Rilancia l'errore per fermare l'inizializzazione e mostrare un messaggio all'utente.
         throw error;
     }
 }
@@ -552,27 +549,32 @@ function listenToMeals() {
     const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)));
     
     onSnapshot(mealsQuery, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            const mealId = change.doc.id;
-            const data = { ...change.doc.data(), jsDate: change.doc.data().date.toDate() };
-
-            if (change.type === "added") {
-                if (!allMeals.some(m => m.id === mealId)) allMeals.push({ id: mealId, ...data });
-            }
-            if (change.type === "modified") {
-                const index = allMeals.findIndex(m => m.id === mealId);
-                if (index > -1) allMeals[index] = { id: mealId, ...data };
-            }
-            if (change.type === "removed") {
-                allMeals = allMeals.filter(m => m.id !== mealId);
-            }
-        });
-
-        allMeals.sort((a, b) => b.jsDate - a.jsDate);
-        recalculateDailyTotals();
         // Aggiorna l'UI solo se l'app è già stata inizializzata.
-        // Questo previene race conditions durante il caricamento iniziale.
+        // Questo previene race conditions durante il caricamento iniziale,
+        // ignorando il primo snapshot che contiene dati già caricati.
         if (isAppInitialized) {
+            let needsUiUpdate = false;
+            snapshot.docChanges().forEach((change) => {
+                needsUiUpdate = true;
+                const mealId = change.doc.id;
+                const data = { ...change.doc.data(), jsDate: change.doc.data().date.toDate() };
+
+                if (change.type === "added") {
+                    // Aggiunge solo se non è già presente per evitare duplicati
+                    if (!allMeals.some(m => m.id === mealId)) {
+                        allMeals.push({ id: mealId, ...data });
+                    }
+                } else if (change.type === "modified") {
+                    const index = allMeals.findIndex(m => m.id === mealId);
+                    if (index > -1) allMeals[index] = { id: mealId, ...data };
+                } else if (change.type === "removed") {
+                    allMeals = allMeals.filter(m => m.id !== mealId);
+                }
+            });
+
+            if (!needsUiUpdate) return;
+            allMeals.sort((a, b) => b.jsDate - a.jsDate);
+            recalculateDailyTotals();
             updateAllUI();
         }    }, (error) => {
         console.error("Errore nel listener dei pasti (onSnapshot):", error);
@@ -1703,6 +1705,12 @@ function addIngredientRow() {
     newIngredient.querySelector('.recipe-ingredient-name').focus();
 }
 
+function processInitialMeals() {
+    // Ordina i pasti per data una sola volta dopo il caricamento iniziale
+    allMeals.sort((a, b) => b.jsDate - a.jsDate);
+    recalculateDailyTotals();
+}
+
 function recalculateDailyTotals() {
     dailyTotalsCache = {};
     allMeals.forEach(meal => {
@@ -1728,6 +1736,17 @@ function resetAddMealForm() {
     document.getElementById('search-results').style.display = 'none';
     updateMealPreview(); // Nasconde l'anteprima
     document.getElementById('food-search').focus();
+}
+
+/**
+ * Pulisce le cache di dati principali. Utile durante lo sviluppo e il testing
+ * per assicurarsi di caricare sempre i dati freschi.
+ */
+function clearCachesForTesting() {
+    console.log('%c[TESTING] Le cache sono state pulite all\'avvio.', 'color: orange; font-weight: bold;');
+    dailyMealsCache = {};
+    dailyTotalsCache = {};
+    waterHistory = {};
 }
 
 function resetNewFoodForm() {
@@ -1830,12 +1849,120 @@ async function searchFoodsAndRecipes(searchTerm) {
 }
 // --- Funzioni Scanner ---
 
-function startScanner(onDecode) {
-    // La logica di avvio dello scanner ora è gestita direttamente dai pulsanti
-    // che attivano l'input file. Questa funzione può essere mantenuta per
-    // usi futuri o rimossa se non più necessaria.
+async function startCameraScanner(onDecode) {
     onDecodeCallback = onDecode;
-    modal.classList.remove('hidden');
+    const scannerModal = document.getElementById('scanner-modal');
+    scannerModal.classList.remove('hidden');
+
+    // Pulisce istanze precedenti per evitare errori
+    if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
+        await html5QrCodeScanner.stop().catch(err => console.error("Errore nel fermare scanner precedente:", err));
+    }
+
+    // Configura lo scanner per supportare esplicitamente i formati di codici a barre più comuni (EAN, UPC)
+    // oltre ai QR code. Questo migliora drasticamente l'affidabilità della scansione dei prodotti.
+    const scannerConfig = { 
+        verbose: false,
+        formatsToSupport: [
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.UPC_A,
+            Html5QrcodeSupportedFormats.UPC_E,
+        ],
+        // Attiva l'API nativa del browser per la scansione, se disponibile.
+        // Questo migliora drasticamente performance e accuratezza.
+        experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+        },
+    };
+
+    html5QrCodeScanner = new Html5Qrcode("scanner-container", scannerConfig);
+
+    const onScanSuccess = async (decodedText, decodedResult) => {
+        triggerFlashAnimation('scanner-container');
+        // Ferma la scansione dopo aver trovato un risultato
+        await stopScanner();
+        showToast(`Codice trovato!`);
+        if (onDecodeCallback) {
+            onDecodeCallback(decodedText);
+        }
+        onDecodeCallback = null; // Resetta il callback
+    };
+
+    const onScanFailure = (error) => {
+        // Gestisce solo gli errori che non sono "QR code not found"
+        if (!error.includes("No QR code found")) {
+            console.warn(`Errore scansione: ${error}`);
+        }
+    };
+
+    const config = {
+        fps: 10,
+        // Rende l'area di scansione reattiva e più grande per migliorare la messa a fuoco e la risoluzione.
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+            const boxWidth = Math.floor(viewfinderWidth * 0.8);
+            return {
+                width: boxWidth,
+                height: Math.floor(boxWidth * 0.5) // Un rapporto 2:1 è ideale per i codici a barre
+            };
+        },
+        rememberLastUsedCamera: true,
+        // Prova a usare la fotocamera posteriore ('environment')
+        // I vincoli video dettagliati vengono spostati qui dentro.
+        videoConstraints: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            focusMode: { ideal: "continuous" }
+        }
+    };
+
+    try {
+        // Il primo argomento ora è un oggetto semplice come richiesto dalla libreria,
+        // mentre la configurazione completa è nel secondo argomento.
+        await html5QrCodeScanner.start(
+            { facingMode: "environment" }, 
+            config, 
+            onScanSuccess, 
+            onScanFailure
+        );
+    } catch (err) {
+        showToast("Impossibile avviare la fotocamera. Controlla i permessi.", true);
+        console.error("Errore avvio scanner:", err);
+        stopScanner(); // Nasconde il modale in caso di errore
+    }
+}
+
+async function triggerFocus() {
+    if (!html5QrCodeScanner || !html5QrCodeScanner.isScanning) {
+        showToast("Lo scanner non è attivo.", true);
+        return;
+    }
+
+    try {
+        const capabilities = html5QrCodeScanner.getRunningTrackCapabilities();
+        const settings = html5QrCodeScanner.getRunningTrackSettings();
+
+        // Controlla se la messa a fuoco è supportata
+        if (capabilities.focusMode) {
+            const focusModes = capabilities.focusMode;
+            // Prova a impostare la messa a fuoco su 'continuous' (autofocus)
+            // o 'single-shot' se disponibile.
+            const newMode = focusModes.includes('continuous') ? 'continuous' : (focusModes.includes('single-shot') ? 'single-shot' : null);
+
+            if (newMode && settings.focusMode !== newMode) {
+                await html5QrCodeScanner.applyVideoConstraints({ advanced: [{ focusMode: newMode }] });
+                showToast("Messa a fuoco automatica attivata.");
+            } else {
+                showToast("La messa a fuoco è già attiva.");
+            }
+        } else {
+            showToast("Il tuo dispositivo non supporta la regolazione della messa a fuoco.", true);
+        }
+    } catch (error) {
+        console.error("Errore durante la messa a fuoco:", error);
+        showToast("Impossibile regolare la messa a fuoco.", true);
+    }
 }
 
 /**
@@ -1950,10 +2077,16 @@ function resizeImageFallback(file, maxWidth) {
     });
 }
 
-function stopScanner(hideModal = true) {
-    // Con il nuovo approccio basato su file, non c'è più uno stream video da fermare.
-    // Questa funzione può essere usata per nascondere il modale se necessario.
-    document.getElementById('scanner-modal').classList.add('hidden');
+async function stopScanner() {
+    const scannerModal = document.getElementById('scanner-modal');
+    if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
+        try {
+            await html5QrCodeScanner.stop();
+        } catch (err) {
+            console.error("Errore nel fermare lo scanner:", err);
+        }
+    }
+    scannerModal.classList.add('hidden');
 }
 
 function populateMealForm(foodData) {
