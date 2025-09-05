@@ -1885,7 +1885,7 @@ async function handleFileSelect(event) {
     
     try {
         // Ridimensiona l'immagine per prevenire crash dovuti alla memoria
-        const imageToScan = await resizeImage(file, 800); // Ridimensionamento più aggressivo
+        const imageToScan = await resizeImage(file, 600); // Ridimensionamento ancora più aggressivo per la stabilità
 
         const fileScanner = new Html5Qrcode("scanner-container", { verbose: false });
         const decodedText = await fileScanner.scanFile(imageToScan, false);
