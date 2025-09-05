@@ -24,6 +24,7 @@ let isOnline = navigator.onLine;
 let onDecodeCallback = null;
 let html5QrCodeScanner = null;
 let waterCount = 0;
+let isAppInitialized = false; // Flag per controllare se l'inizializzazione è completa
 let onConfirmAction = null; // Callback per il modale di conferma
 // let isDragging = false; // Flag per gestire il conflitto click/drag
 let waterUnsubscribe = null;
@@ -52,6 +53,7 @@ window.onload = () => {
         const loginScreen = document.getElementById('login-screen');
         const appContainer = document.getElementById('app');
         if (user) {
+            isAppInitialized = false; // Resetta il flag ad ogni login
             try {
                 // Resetta la data a oggi ad ogni login/refresh per coerenza.
                 selectedDate = new Date();
@@ -61,17 +63,21 @@ window.onload = () => {
                 loadingOverlay.classList.remove('hidden');
                 
                 updateUserUI(user);
-                await loadNutritionGoals();
-                listenToWaterData();
-                listenToWaterHistory();
+
+                // Carica tutti i dati iniziali in parallelo e attendi il completamento
+                // per evitare race conditions e rendering con dati parziali.
                 await loadInitialData();
-                
-                updateDateDisplay();
+
                 initCharts(
                     document.getElementById('calorie-chart').getContext('2d'),
                     document.getElementById('macro-chart').getContext('2d')
                 );
-                updateCharts(dailyTotalsCache, selectedDate);
+
+                // Ora che tutti i dati sono caricati e processati, aggiorna l'intera UI.
+                updateAllUI();
+                
+                // L'inizializzazione è completata con successo.
+                isAppInitialized = true;
 
                 appContainer.classList.remove('hidden');
             } catch (error) {
@@ -81,6 +87,7 @@ window.onload = () => {
                 loadingOverlay.classList.add('hidden');
             }
         } else {
+            isAppInitialized = false;
             userId = null;
             updateUserUI(null);
             appContainer.classList.add('hidden');
@@ -142,10 +149,15 @@ function setupListeners() {
     document.getElementById('logout-btn').addEventListener('click', logout);
 
     // Scanner
-    document.getElementById('scan-barcode-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateMealForm)));
-    document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => startScanner(barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm)));
+    document.getElementById('scan-barcode-btn').addEventListener('click', () => {
+        onDecodeCallback = barcode => fetchFoodFromBarcode(barcode, populateMealForm);
+        document.getElementById('barcode-file-input').click();
+    });
+    document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => {
+        onDecodeCallback = barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm);
+        document.getElementById('barcode-file-input').click();
+    });
     document.getElementById('scan-from-file-btn').addEventListener('click', () => {
-        stopScanner(false); // Ferma lo stream video ma lascia il modale aperto
         document.getElementById('barcode-file-input').click();
     });
     document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
@@ -495,66 +507,86 @@ function updateOnlineStatus(online) {
 async function loadInitialData() {
     if (!userId) return;
     try {
-        // Carica pasti (ultimi 30 giorni per i grafici)
+        // 1. Caricamento iniziale con getDocs per garantire che i dati siano presenti
+        // prima di procedere. Questo previene race conditions al primo avvio.
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const allMealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
+        const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
+        const recipesQuery = collection(db, `users/${userId}/recipes`);
+
+        const [mealsSnapshot, recipesSnapshot] = await Promise.all([
+            getDocs(mealsQuery),
+            getDocs(recipesQuery),
+            loadNutritionGoals() // Carica anche gli obiettivi
+        ]);
+
+        allMeals = mealsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
+        allMeals.sort((a, b) => b.jsDate - a.jsDate);
         
-        onSnapshot(allMealsQuery, (snapshot) => {
-            let needsRecalculation = false;
+        recipes = recipesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-            snapshot.docChanges().forEach((change) => {
-                needsRecalculation = true;
-                const data = change.doc.data();
-                const mealId = change.doc.id;
-                const jsDate = data.date?.toDate();
-                if (!jsDate) return; // Salta dati corrotti
+        // Calcola i totali una volta dopo il caricamento iniziale
+        recalculateDailyTotals();
 
-                const dateKey = jsDate.toISOString().split('T')[0];
+        // 2. Ora che i dati iniziali sono caricati, avvia i listener in tempo reale (onSnapshot)
+        // per le modifiche successive.
+        listenToMeals();
+        listenToRecipes();
+        listenToWaterData(); // Spostato qui per coerenza
+        listenToWaterHistory(); // Spostato qui per coerenza
 
-                // Invalida la cache per il giorno del pasto e la cache dei totali
-                delete dailyMealsCache[dateKey];
-                delete dailyTotalsCache[dateKey];
+    } catch (error) {
+        console.error("Errore caricamento dati iniziali:", error);
+        showToast("Errore nel caricare i dati.", true);
+        // Rilancia l'errore per farlo catturare dal blocco try/catch principale
+        // che gestisce la visualizzazione del messaggio "Errore durante il caricamento dell'app".
+        throw error;
+    }
+}
 
-                if (change.type === "added") {
-                    allMeals.push({ id: mealId, ...data, jsDate });
-                }
-                if (change.type === "modified") {
-                    const index = allMeals.findIndex(m => m.id === mealId);
-                    if (index > -1) {
-                        const oldDateKey = allMeals[index].jsDate.toISOString().split('T')[0];
-                        // Se la data è cambiata, invalida anche la cache del giorno precedente
-                        if (oldDateKey !== dateKey) {
-                            delete dailyMealsCache[oldDateKey];
-                            delete dailyTotalsCache[oldDateKey];
-                        }
-                        allMeals[index] = { id: mealId, ...data, jsDate };
-                    }
-                }
-                if (change.type === "removed") {
-                    allMeals = allMeals.filter(m => m.id !== mealId);
-                }
-            });
+function listenToMeals() {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)));
+    
+    onSnapshot(mealsQuery, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            const mealId = change.doc.id;
+            const data = { ...change.doc.data(), jsDate: change.doc.data().date.toDate() };
 
-            if (needsRecalculation) {
-                allMeals.sort((a, b) => b.jsDate - a.jsDate);
-                recalculateDailyTotals();
-                updateAllUI();
+            if (change.type === "added") {
+                if (!allMeals.some(m => m.id === mealId)) allMeals.push({ id: mealId, ...data });
             }
-        }, (error) => {
-            console.error("Errore nel listener dei pasti (onSnapshot):", error);
-            showToast("Errore nel caricare i pasti in tempo reale.", true);
+            if (change.type === "modified") {
+                const index = allMeals.findIndex(m => m.id === mealId);
+                if (index > -1) allMeals[index] = { id: mealId, ...data };
+            }
+            if (change.type === "removed") {
+                allMeals = allMeals.filter(m => m.id !== mealId);
+            }
         });
 
-        // Carica ricette
+        allMeals.sort((a, b) => b.jsDate - a.jsDate);
+        recalculateDailyTotals();
+        // Aggiorna l'UI solo se l'app è già stata inizializzata.
+        // Questo previene race conditions durante il caricamento iniziale.
+        if (isAppInitialized) {
+            updateAllUI();
+        }    }, (error) => {
+        console.error("Errore nel listener dei pasti (onSnapshot):", error);
+        showToast("Errore nel caricare i pasti in tempo reale.", true);
+    });
+}
+
+function listenToRecipes() {
+    try {
         const recipesCollection = collection(db, `users/${userId}/recipes`);
         onSnapshot(recipesCollection, (snapshot) => {
             recipes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderRecipes();
         });
     } catch (error) {
-        console.error("Errore caricamento dati iniziali:", error);
-        showToast("Errore nel caricare i dati.", true);
+        console.error("Errore nell'avvio del listener delle ricette:", error);
     }
 }
 
@@ -790,67 +822,55 @@ async function saveRecipe() {
         saveBtn.disabled = true;
         saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Salvataggio...`;
 
-        const totalNutrition = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
-        const foodsCollection = collection(db, 'foods');
-        let totalWeight = 0;
-
-        // Ottimizzazione: usa query 'in' per recuperare tutti gli ingredienti in una sola volta
+        // 1. Recupera i dati di tutti gli ingredienti con una sola query
+        const ingredientIds = ingredients.map(ing => ing.foodId).filter(id => id);
         const foodDataMap = new Map();
-
-        // 1. Recupera ingredienti con ID
-        const ingredientsWithId = ingredients.filter(ing => ing.foodId);
-        if (ingredientsWithId.length > 0) {
-            const ids = ingredientsWithId.map(ing => ing.foodId);
-            const q = query(foodsCollection, where(documentId(), 'in', ids));
+        if (ingredientIds.length > 0) {
+            const q = query(collection(db, 'foods'), where(documentId(), 'in', ingredientIds));
             const snapshot = await getDocs(q);
             snapshot.forEach(doc => foodDataMap.set(doc.id, doc.data()));
         }
 
-        // 2. Recupera ingredienti senza ID (basati sul nome)
-        const ingredientsWithoutId = ingredients.filter(ing => !ing.foodId);
-        if (ingredientsWithoutId.length > 0) {
-            const names = ingredientsWithoutId.map(ing => ing.name.toLowerCase());
-            const q = query(foodsCollection, where('name_lowercase', 'in', names));
-            const snapshot = await getDocs(q);
-            snapshot.forEach(doc => foodDataMap.set(doc.data().name_lowercase, doc.data()));
+        // 2. Verifica se tutti gli ingredienti sono stati trovati nel database
+        const missingIngredients = ingredients.filter(ing => !ing.foodId || !foodDataMap.has(ing.foodId));
+        if (missingIngredients.length > 0) {
+            const missingNames = missingIngredients.map(ing => ing.name).join(', ');
+            throw new Error(`Ingredienti non validi: ${missingNames}. Selezionali dalla lista per confermarli.`);
         }
 
-        // 3. Calcola i totali e verifica se tutti gli ingredienti sono stati trovati
-        const notFoundIngredients = [];
-        for (const ing of ingredients) {
-            const foodData = ing.foodId 
-                ? foodDataMap.get(ing.foodId) 
-                : foodDataMap.get(ing.name.toLowerCase());
-
+        // 3. Calcola i totali nutrizionali e il peso totale
+        const { totalNutrition, totalWeight } = ingredients.reduce((acc, ing) => {
+            const foodData = foodDataMap.get(ing.foodId);
             if (foodData) {
                 const ratio = ing.quantity / 100;
-                ['calories', 'proteins', 'carbs', 'fats', 'fibers'].forEach(key => {
-                    totalNutrition[key] += (foodData[key] || 0) * ratio;
-                });
-                totalWeight += ing.quantity;
-            } else {
-                notFoundIngredients.push(ing.name);
+                acc.totalNutrition.calories += (foodData.calories || 0) * ratio;
+                acc.totalNutrition.proteins += (foodData.proteins || 0) * ratio;
+                acc.totalNutrition.carbs += (foodData.carbs || 0) * ratio;
+                acc.totalNutrition.fats += (foodData.fats || 0) * ratio;
+                acc.totalNutrition.fibers += (foodData.fibers || 0) * ratio;
+                acc.totalWeight += ing.quantity;
             }
-        }
-
-        if (notFoundIngredients.length > 0) {
-            const notFoundNames = notFoundIngredients.join(', ');
-            throw new Error(`Ingredienti non trovati: ${notFoundNames}. Controlla il nome.`);
-        }
+            return acc;
+        }, { 
+            totalNutrition: { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 },
+            totalWeight: 0 
+        });
 
         await addDoc(collection(db, `users/${userId}/recipes`), { 
             name, 
             name_lowercase: name.toLowerCase(),
-            ingredients, 
+            // Salva solo nome e quantità, l'ID non serve più dopo il calcolo
+            ingredients: ingredients.map(({ name, quantity }) => ({ name, quantity })), 
             servings,
             totalNutrition,
             totalWeight
         });
+
         showToast(`Ricetta "${name}" salvata!`);
         resetRecipeForm();
     } catch (error) {
         console.error("Errore salvataggio ricetta:", error);
-        if (error.message.startsWith('Ingredienti non trovati')) {
+        if (error.message.startsWith('Ingredienti non validi')) {
             showToast(error.message, true);
         } else {
             showToast("Si è verificato un errore.", true);
@@ -1808,44 +1828,11 @@ async function searchFoodsAndRecipes(searchTerm) {
 // --- Funzioni Scanner ---
 
 function startScanner(onDecode) {
-    if (typeof Html5Qrcode === 'undefined') {
-        return showToast("Libreria di scansione non caricata.", true);
-    }
+    // La logica di avvio dello scanner ora è gestita direttamente dai pulsanti
+    // che attivano l'input file. Questa funzione può essere mantenuta per
+    // usi futuri o rimossa se non più necessaria.
     onDecodeCallback = onDecode;
-
-    const modal = document.getElementById('scanner-modal');
     modal.classList.remove('hidden');
-
-    const feedback = document.getElementById('scanner-feedback');
-    feedback.textContent = 'Avvio fotocamera...';
-
-    html5QrCodeScanner = new Html5Qrcode("scanner-container", { verbose: false });
-
-    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-        stopScanner();
-        showToast(`Codice trovato!`);
-        if (onDecodeCallback) {
-            onDecodeCallback(decodedText);
-        }
-    };
-
-    const config = { 
-        fps: 10, 
-        qrbox: (viewfinderWidth, viewfinderHeight) => {
-            const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-            const qrboxSize = Math.floor(minEdge * 0.8);
-            return { width: qrboxSize, height: qrboxSize };
-        },
-        rememberLastUsedCamera: true
-    };
-
-    html5QrCodeScanner.start({ facingMode: "environment" }, config, qrCodeSuccessCallback, (errorMessage) => {
-        feedback.textContent = 'Punta la fotocamera verso un codice a barre...';
-    }).catch((err) => {
-        console.error("Impossibile avviare lo scanner:", err);
-        feedback.textContent = 'Impossibile accedere alla fotocamera. Prova a caricare un file.';
-        showToast("Impossibile avviare la fotocamera. Controlla i permessi.", true);
-    });
 }
 
 /**
@@ -1893,10 +1880,8 @@ async function handleFileSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    const modal = document.getElementById('scanner-modal');
-    const feedback = document.getElementById('scanner-feedback');
-    modal.classList.remove('hidden');
-    feedback.textContent = 'Elaborazione immagine...';
+    // Mostra un feedback immediato all'utente
+    showToast('Elaborazione immagine...');
     
     try {
         // Ridimensiona l'immagine per prevenire crash dovuti alla memoria
@@ -1913,7 +1898,6 @@ async function handleFileSelect(event) {
         console.error("Errore scansione file:", err);
         showToast("Nessun codice a barre trovato nell'immagine.", true);
     } finally {
-        modal.classList.add('hidden');
         onDecodeCallback = null;
         event.target.value = ''; // Permette di ricaricare lo stesso file
     }
@@ -1964,15 +1948,9 @@ function resizeImageFallback(file, maxWidth) {
 }
 
 function stopScanner(hideModal = true) {
-    if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
-        html5QrCodeScanner.stop().catch(err => {
-            console.error("Errore durante lo stop dello scanner:", err);
-        });
-    }
-    html5QrCodeScanner = null;
-    if (hideModal) {
-        document.getElementById('scanner-modal').classList.add('hidden');
-    }
+    // Con il nuovo approccio basato su file, non c'è più uno stream video da fermare.
+    // Questa funzione può essere usata per nascondere il modale se necessario.
+    document.getElementById('scanner-modal').classList.add('hidden');
 }
 
 function populateMealForm(foodData) {
