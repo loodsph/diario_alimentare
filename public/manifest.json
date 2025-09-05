@@ -13,5 +13,11 @@
             "type": "image/png",
             "purpose": "any maskable"
         }
-    ]
+    ],
+    "permissions": [
+        {
+            "name": "camera",
+            "description": "Necessario per scansionare i codici a barre dei prodotti."
+        }
+    ] 
 }

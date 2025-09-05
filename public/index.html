@@ -110,7 +110,7 @@
                     <div>
                         <label for="food-search" class="block text-sm font-semibold text-slate-300 mb-3">Cerca Alimento o Scansiona</label>
                         <div id="food-search-wrapper" class="relative">
-                            <input type="text" id="food-search" class="search-input w-full pl-12" placeholder="Cerca un alimento..." autocomplete="off">
+                            <input type="text" id="food-search" class="search-input w-full pl-12 pr-16" placeholder="Cerca un alimento..." autocomplete="off">
                             <i id="food-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none transition-opacity duration-300"></i>
                             <button id="scan-barcode-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre">
                                 <i class="fas fa-barcode"></i>
@@ -483,9 +483,9 @@
                 </button>
                 <div id="new-food-content" class="section-content">
                     <div class="glass-card p-8 rounded-3xl mt-4">
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                             <div class="lg:col-span-3 relative">
-                                 <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-12" aria-label="Nome alimento">
+                                 <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-16" aria-label="Nome alimento">
                                  <button id="scan-barcode-for-new-food-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
                                     <i class="fas fa-barcode"></i>
                                 </button>
@@ -547,6 +547,31 @@
         </footer>
     </div>
     
+    <div id="scanner-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
+        <div class="modal-content p-8 max-w-xl w-full mx-4">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="scanner-title" class="text-2xl font-bold text-white">Scansiona Codice</h3>
+                <button id="close-scanner-btn" class="text-white hover:text-slate-300" aria-label="Chiudi scanner">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+            <div id="scanner-reader" class="bg-slate-900 rounded-lg overflow-hidden w-full">
+                <!-- Il lettore verrà renderizzato qui -->
+            </div>
+            <div id="scanner-feedback" class="text-center text-slate-300 mt-4 mb-4 h-5"></div>
+            <div class="flex flex-col sm:flex-row gap-4 mt-4">
+                <div class="flex-1">
+                    <label for="camera-select" class="sr-only">Scegli Fotocamera</label>
+                    <select id="camera-select" class="input-modern w-full"></select>
+                </div>
+                <button id="scan-from-file-btn" class="btn-modern bg-slate-700 w-full text-white">
+                    <i class="fas fa-image mr-2"></i> Scansiona da File
+                </button>
+            </div>
+        </div>
+    </div>
+    <input type="file" id="barcode-file-input" class="hidden" accept="image/*">
+
     <div id="toast" class="toast fixed bottom-8 left-8 p-4 rounded-2xl opacity-0 transform translate-y-10 transition-all duration-500 z-50 flex items-center gap-3" role="alert" aria-live="assertive">
         <div class="w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center">
             <i class="fas fa-check text-white text-sm"></i>
@@ -643,40 +668,11 @@
         </div>
     </div>
 
-    <div id="scanner-modal" class="modal fixed inset-0 flex items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
-        <div class="modal-content p-8 max-w-md w-full mx-4">
-            <div class="flex justify-between items-center mb-6">
-                <h3 id="scanner-title" class="text-2xl font-bold text-white">Scansiona un codice a barre</h3>
-                <button id="close-scanner-btn" class="text-white hover:text-slate-300" aria-label="Chiudi scanner">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-            <div id="scanner-container" class="bg-slate-900 rounded-lg overflow-hidden mb-4 w-full">
-                <!-- Il video feed della fotocamera verrà iniettato qui -->
-            </div>
-            <div id="scanner-feedback" class="text-center text-slate-300 mb-4">
-                Punta la fotocamera verso un codice a barre...
-            </div>
-            <div class="flex flex-col gap-4">
-                <button id="focus-scanner-btn" class="btn-modern bg-slate-600 w-full text-white">
-                    <i class="fas fa-crosshairs mr-2"></i>
-                    Metti a fuoco
-                </button>
-                <button id="scan-from-file-btn" class="btn-modern bg-slate-700 w-full text-white">
-                    <i class="fas fa-image mr-2"></i>
-                    O carica un'immagine
-                </button>
-            </div>
-        </div>
-    </div>
-
-    
-    <input type="file" id="barcode-file-input" accept="image/*" capture class="hidden">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js" defer></script>
     <script type="module" src="script.js"></script>
 </body>
 </html>

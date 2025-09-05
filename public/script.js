@@ -22,7 +22,9 @@ let currentRecipeIngredientResults = [];
 let mealToEditId = null; // ID del pasto attualmente in modifica
 let isOnline = navigator.onLine;
 let onDecodeCallback = null;
-let html5QrCodeScanner = null;
+let html5QrCode = null;
+let availableCameras = [];
+let currentCameraIndex = 0;
 let waterCount = 0;
 let isAppInitialized = false; // Flag per controllare se l'inizializzazione è completa
 let onConfirmAction = null; // Callback per il modale di conferma
@@ -42,7 +44,10 @@ let nutritionGoals = {
 
 // --- INIZIALIZZAZIONE ---
 
-window.onload = () => {
+// Usiamo DOMContentLoaded per garantire che tutti gli script (inclusi quelli con 'defer')
+// siano stati caricati ed eseguiti prima di avviare l'app.
+// Questo risolve la "race condition" con la libreria ZXing.
+window.addEventListener('DOMContentLoaded', () => {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
@@ -53,9 +58,6 @@ window.onload = () => {
         const loginScreen = document.getElementById('login-screen');
         const appContainer = document.getElementById('app');
         if (user) {
-            // Meccanismo per pulire la cache ad ogni avvio (utile in fase di testing)
-            clearCachesForTesting();
-
             isAppInitialized = false; // Resetta il flag ad ogni login
             try {
                 // Resetta la data a oggi ad ogni login/refresh per coerenza.
@@ -110,7 +112,7 @@ window.onload = () => {
             resetAppData();
         }
     });
-};
+});
 
 // --- GESTIONE EVENTI ---
 
@@ -160,17 +162,16 @@ function setupListeners() {
 
     // Scanner
     document.getElementById('scan-barcode-btn').addEventListener('click', () => {
-        startCameraScanner(barcode => fetchFoodFromBarcode(barcode, populateMealForm));
+        startScanner(barcode => fetchFoodFromBarcode(barcode, populateMealForm));
     });
     document.getElementById('scan-barcode-for-new-food-btn').addEventListener('click', () => {
-        startCameraScanner(barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm));
-    });
-    document.getElementById('scan-from-file-btn').addEventListener('click', () => {
-        document.getElementById('barcode-file-input').click();
+        startScanner(barcode => fetchFoodFromBarcode(barcode, populateNewFoodForm));
     });
     document.getElementById('close-scanner-btn').addEventListener('click', stopScanner);
-    document.getElementById('focus-scanner-btn').addEventListener('click', triggerFocus);
+    document.getElementById('camera-select').addEventListener('change', handleCameraChange);
+    document.getElementById('scan-from-file-btn').addEventListener('click', () => document.getElementById('barcode-file-input').click());
     document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
+
     foodSearchInput.addEventListener('input', debounce(async (e) => {
         const searchTerm = e.target.value.toLowerCase();
         const resultsContainer = document.getElementById('search-results');
@@ -955,15 +956,7 @@ async function fetchFoodFromBarcode(barcode, callback) {
         }
         
         const { product_name, nutriments } = data.product;
-        const foodData = {
-            name: product_name || 'Nome non disponibile',
-            calories: nutriments['energy-kcal_100g'] || (nutriments.energy_100g / 4.184) || 0,
-            proteins: nutriments.proteins_100g || 0,
-            carbs: nutriments.carbohydrates_100g || 0,
-            fats: nutriments.fat_100g || 0,
-            fibers: nutriments.fiber_100g || 0
-        };
-        
+        const foodData = { name: product_name || 'Nome non disponibile', calories: nutriments['energy-kcal_100g'] || (nutriments.energy_100g / 4.184) || 0, proteins: nutriments.proteins_100g || 0, carbs: nutriments.carbohydrates_100g || 0, fats: nutriments.fat_100g || 0, fibers: nutriments.fiber_100g || 0 };
         callback(foodData);
     } catch (error) {
         console.error('Errore API Open Food Facts:', error);
@@ -1738,17 +1731,6 @@ function resetAddMealForm() {
     document.getElementById('food-search').focus();
 }
 
-/**
- * Pulisce le cache di dati principali. Utile durante lo sviluppo e il testing
- * per assicurarsi di caricare sempre i dati freschi.
- */
-function clearCachesForTesting() {
-    console.log('%c[TESTING] Le cache sono state pulite all\'avvio.', 'color: orange; font-weight: bold;');
-    dailyMealsCache = {};
-    dailyTotalsCache = {};
-    waterHistory = {};
-}
-
 function resetNewFoodForm() {
     ['new-food-name', 'new-food-calories', 'new-food-proteins', 'new-food-carbs', 'new-food-fats', 'new-food-fibers']
         .forEach(id => document.getElementById(id).value = '');
@@ -1847,272 +1829,6 @@ async function searchFoodsAndRecipes(searchTerm) {
         return [];
     }
 }
-// --- Funzioni Scanner ---
-
-async function startCameraScanner(onDecode) {
-    onDecodeCallback = onDecode;
-    const scannerModal = document.getElementById('scanner-modal');
-    scannerModal.classList.remove('hidden');
-
-    // Pulisce istanze precedenti per evitare errori
-    if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
-        await html5QrCodeScanner.stop().catch(err => console.error("Errore nel fermare scanner precedente:", err));
-    }
-
-    // Configura lo scanner per supportare esplicitamente i formati di codici a barre più comuni (EAN, UPC)
-    // oltre ai QR code. Questo migliora drasticamente l'affidabilità della scansione dei prodotti.
-    const scannerConfig = { 
-        verbose: false,
-        formatsToSupport: [
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.UPC_A,
-            Html5QrcodeSupportedFormats.UPC_E,
-        ],
-        // Attiva l'API nativa del browser per la scansione, se disponibile.
-        // Questo migliora drasticamente performance e accuratezza.
-        experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-        },
-    };
-
-    html5QrCodeScanner = new Html5Qrcode("scanner-container", scannerConfig);
-
-    const onScanSuccess = async (decodedText, decodedResult) => {
-        triggerFlashAnimation('scanner-container');
-        // Ferma la scansione dopo aver trovato un risultato
-        await stopScanner();
-        showToast(`Codice trovato!`);
-        if (onDecodeCallback) {
-            onDecodeCallback(decodedText);
-        }
-        onDecodeCallback = null; // Resetta il callback
-    };
-
-    const onScanFailure = (error) => {
-        // Gestisce solo gli errori che non sono "QR code not found"
-        if (!error.includes("No QR code found")) {
-            console.warn(`Errore scansione: ${error}`);
-        }
-    };
-
-    const config = {
-        fps: 10,
-        // Rende l'area di scansione reattiva e più grande per migliorare la messa a fuoco e la risoluzione.
-        qrbox: (viewfinderWidth, viewfinderHeight) => {
-            const boxWidth = Math.floor(viewfinderWidth * 0.8);
-            return {
-                width: boxWidth,
-                height: Math.floor(boxWidth * 0.5) // Un rapporto 2:1 è ideale per i codici a barre
-            };
-        },
-        rememberLastUsedCamera: true,
-        // Prova a usare la fotocamera posteriore ('environment')
-        // I vincoli video dettagliati vengono spostati qui dentro.
-        videoConstraints: {
-            facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            focusMode: { ideal: "continuous" }
-        }
-    };
-
-    try {
-        // Il primo argomento ora è un oggetto semplice come richiesto dalla libreria,
-        // mentre la configurazione completa è nel secondo argomento.
-        await html5QrCodeScanner.start(
-            { facingMode: "environment" }, 
-            config, 
-            onScanSuccess, 
-            onScanFailure
-        );
-    } catch (err) {
-        showToast("Impossibile avviare la fotocamera. Controlla i permessi.", true);
-        console.error("Errore avvio scanner:", err);
-        stopScanner(); // Nasconde il modale in caso di errore
-    }
-}
-
-async function triggerFocus() {
-    if (!html5QrCodeScanner || !html5QrCodeScanner.isScanning) {
-        showToast("Lo scanner non è attivo.", true);
-        return;
-    }
-
-    try {
-        const capabilities = html5QrCodeScanner.getRunningTrackCapabilities();
-        const settings = html5QrCodeScanner.getRunningTrackSettings();
-
-        // Controlla se la messa a fuoco è supportata
-        if (capabilities.focusMode) {
-            const focusModes = capabilities.focusMode;
-            // Prova a impostare la messa a fuoco su 'continuous' (autofocus)
-            // o 'single-shot' se disponibile.
-            const newMode = focusModes.includes('continuous') ? 'continuous' : (focusModes.includes('single-shot') ? 'single-shot' : null);
-
-            if (newMode && settings.focusMode !== newMode) {
-                await html5QrCodeScanner.applyVideoConstraints({ advanced: [{ focusMode: newMode }] });
-                showToast("Messa a fuoco automatica attivata.");
-            } else {
-                showToast("La messa a fuoco è già attiva.");
-            }
-        } else {
-            showToast("Il tuo dispositivo non supporta la regolazione della messa a fuoco.", true);
-        }
-    } catch (error) {
-        console.error("Errore durante la messa a fuoco:", error);
-        showToast("Impossibile regolare la messa a fuoco.", true);
-    }
-}
-
-/**
- * Ridimensiona un'immagine per ottimizzare le performance e l'uso della memoria,
- * prevenendo crash su mobile con foto ad alta risoluzione.
- * @param {File} file - Il file immagine originale.
- * @param {number} maxWidth - La larghezza massima desiderata per l'immagine.
- * @returns {Promise<File>} Una promise che si risolve con il nuovo file immagine ridimensionato.
- */
-async function resizeImage(file, maxWidth) {
-    // Controlla se l'API createImageBitmap è supportata per un'elaborazione più efficiente.
-    if (typeof createImageBitmap === 'undefined') {
-        // Fallback al metodo con Image() se l'API non è disponibile (es. browser più vecchi).
-        console.warn("createImageBitmap non supportato, uso il fallback.");
-        return resizeImageFallback(file, maxWidth);
-    }
-
-    try {
-        const imageBitmap = await createImageBitmap(file, {
-            resizeQuality: 'high',
-            resizeWidth: maxWidth
-        });
-
-        const canvas = document.createElement('canvas');
-        canvas.width = imageBitmap.width;
-        canvas.height = imageBitmap.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(imageBitmap, 0, 0);
-
-        // Chiudi il bitmap per liberare memoria
-        imageBitmap.close();
-
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, file.type, 0.5));
-        if (!blob) throw new Error('Creazione Blob per il ridimensionamento fallita.');
-
-        return new File([blob], file.name, { type: file.type, lastModified: Date.now() });
-    } catch (error) {
-        console.error("Errore durante il ridimensionamento con createImageBitmap:", error);
-        // Se l'API fallisce per qualche motivo, prova con il metodo di fallback.
-        return resizeImageFallback(file, maxWidth);
-    }
-}
-
-async function handleFileSelect(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // Mostra un feedback immediato all'utente
-    showToast('Elaborazione immagine...');
-    
-    try {
-        // Ridimensiona l'immagine per prevenire crash dovuti alla memoria
-        const imageToScan = await resizeImage(file, 600); // Ridimensionamento ancora più aggressivo per la stabilità
-
-        const fileScanner = new Html5Qrcode("scanner-container", { verbose: false });
-        const decodedText = await fileScanner.scanFile(imageToScan, false);
-        
-        showToast(`Codice trovato!`);
-        if (onDecodeCallback) {
-            onDecodeCallback(decodedText);
-        }
-    } catch (err) {
-        console.error("Errore scansione file:", err);
-        showToast("Nessun codice a barre trovato nell'immagine.", true);
-    } finally {
-        onDecodeCallback = null;
-        event.target.value = ''; // Permette di ricaricare lo stesso file
-    }
-}
-
-/**
- * Metodo di fallback per il ridimensionamento delle immagini per browser meno recenti.
- * @param {File} file - Il file immagine originale.
- * @param {number} maxWidth - La larghezza massima desiderata per l'immagine.
- * @returns {Promise<File>} Una promise che si risolve con il nuovo file immagine ridimensionato.
- */
-function resizeImageFallback(file, maxWidth) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        const objectUrl = URL.createObjectURL(file);
-
-        img.onload = () => {
-            URL.revokeObjectURL(objectUrl);
-            const canvas = document.createElement('canvas');
-            let { width, height } = img;
-
-            if (width > maxWidth) {
-                height = (maxWidth / width) * height;
-                width = maxWidth;
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
-            canvas.toBlob((blob) => {
-                // Suggerisce al browser di liberare la memoria del canvas
-                canvas.width = 0;
-                canvas.height = 0;
-
-                if (blob) resolve(new File([blob], file.name, { type: file.type, lastModified: Date.now() }));
-                else reject(new Error('Creazione Blob per il ridimensionamento fallita (fallback).'));
-            }, file.type, 0.75);
-        };
-
-        img.onerror = (err) => {
-            URL.revokeObjectURL(objectUrl);
-            reject(err);
-        };
-        img.src = objectUrl;
-    });
-}
-
-async function stopScanner() {
-    const scannerModal = document.getElementById('scanner-modal');
-    if (html5QrCodeScanner && html5QrCodeScanner.isScanning) {
-        try {
-            await html5QrCodeScanner.stop();
-        } catch (err) {
-            console.error("Errore nel fermare lo scanner:", err);
-        }
-    }
-    scannerModal.classList.add('hidden');
-}
-
-function populateMealForm(foodData) {
-    document.getElementById('food-search').value = foodData.name;
-    document.getElementById('meal-quantity').value = 100;
-    selectedFood = foodData;
-    showToast(`Prodotto trovato: ${foodData.name}`);
-    document.getElementById('meal-quantity').focus();
-}
-
-function populateNewFoodForm(foodData) {
-    const section = document.getElementById('new-food-content').closest('.collapsible-section');
-    if (section.classList.contains('collapsed')) {
-        section.querySelector('.section-header').click();
-    }
-    
-    document.getElementById('new-food-name').value = foodData.name;
-    document.getElementById('new-food-calories').value = Math.round(foodData.calories);
-    document.getElementById('new-food-proteins').value = (foodData.proteins || 0).toFixed(1);
-    document.getElementById('new-food-carbs').value = (foodData.carbs || 0).toFixed(1);
-    document.getElementById('new-food-fats').value = (foodData.fats || 0).toFixed(1);
-    document.getElementById('new-food-fibers').value = (foodData.fibers || 0).toFixed(1);
-    
-    showToast(`Dati di "${foodData.name}" importati. Controlla e salva.`);
-    document.getElementById('new-food-name').focus();
-}
 
 function updateRecipeBuilderMacroBar() {
     const container = document.getElementById('recipe-builder-macro-bar-container');
@@ -2194,4 +1910,176 @@ function updateMealPreview() {
     document.getElementById('preview-carbs').textContent = `${((foodData.carbs || 0) * ratio).toFixed(1)} g`;
     document.getElementById('preview-fats').textContent = `${((foodData.fats || 0) * ratio).toFixed(1)} g`;
     document.getElementById('preview-fibers').textContent = `${((foodData.fibers || 0) * ratio).toFixed(1)} g`;
+}
+
+// --- Funzioni Scanner ---
+
+async function startScanner(onDecode) {
+    onDecodeCallback = onDecode;
+    const scannerModal = document.getElementById('scanner-modal');
+    const feedbackEl = document.getElementById('scanner-feedback');
+    const cameraSelect = document.getElementById('camera-select');
+    scannerModal.classList.remove('hidden');
+    feedbackEl.textContent = 'Avvio fotocamera...';
+
+    try {
+        // Ottieni la lista delle fotocamere solo se non è già stata caricata.
+        // Questo preserva la selezione dell'utente nelle aperture successive.
+        if (availableCameras.length === 0) {
+            availableCameras = await window.Html5Qrcode.getCameras();
+            if (!availableCameras || availableCameras.length === 0) {
+                throw new Error("Nessuna fotocamera trovata.");
+            }
+            // Cerca e imposta la fotocamera posteriore come predefinita SOLO la prima volta.
+            const rearCameraIndex = availableCameras.findIndex(camera => 
+                camera.label.toLowerCase().includes('back') || 
+                camera.label.toLowerCase().includes('rear') ||
+                camera.label.toLowerCase().includes('ambiente')
+            );
+            currentCameraIndex = rearCameraIndex !== -1 ? rearCameraIndex : 0;
+        }
+
+        // Popola il dropdown delle fotocamere
+        cameraSelect.innerHTML = '';
+        availableCameras.forEach((camera, index) => {
+            const option = document.createElement('option');
+            option.value = camera.id;
+            option.textContent = camera.label || `Fotocamera ${index + 1}`;
+            cameraSelect.appendChild(option);
+        });
+        cameraSelect.selectedIndex = currentCameraIndex;
+
+        // Crea l'istanza dello scanner se non esiste
+        if (!html5QrCode) {
+            html5QrCode = new window.Html5Qrcode("scanner-reader", {
+                formatsToSupport: [
+                    window.Html5QrcodeSupportedFormats.EAN_13,
+                    window.Html5QrcodeSupportedFormats.EAN_8,
+                    window.Html5QrcodeSupportedFormats.UPC_A,
+                    window.Html5QrcodeSupportedFormats.UPC_E
+                ]
+            });
+        }
+
+        // Avvia la scansione con la fotocamera selezionata
+        await startScanningWithCurrentCamera();
+
+    } catch (err) {
+        console.error("Errore critico avvio scanner:", err);
+        feedbackEl.textContent = "Errore fotocamera. Controlla i permessi.";
+        showToast("Impossibile avviare la fotocamera. Controlla i permessi del browser.", true);
+    }
+}
+
+async function startScanningWithCurrentCamera() {
+    if (!html5QrCode || availableCameras.length === 0) return;
+
+    const feedbackEl = document.getElementById('scanner-feedback');
+    feedbackEl.textContent = 'Inquadra un codice a barre...';
+
+    // Ferma la scansione precedente se attiva
+    if (html5QrCode.isScanning) {
+        await html5QrCode.stop();
+    }
+
+    const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 150 }
+    };
+
+    const onScanSuccess = (decodedText, decodedResult) => {
+        stopScanner();
+        showToast(`Codice trovato!`);
+        if (onDecodeCallback) {
+            onDecodeCallback(decodedText);
+        }
+        onDecodeCallback = null;
+    };
+
+    const onScanFailure = (error) => { /* Ignora errori di non trovato */ };
+
+    try {
+        await html5QrCode.start(
+            availableCameras[currentCameraIndex].id,
+            config,
+            onScanSuccess,
+            onScanFailure
+        );
+    } catch (err) {
+        console.error(`Errore avvio fotocamera ${availableCameras[currentCameraIndex].id}:`, err);
+        feedbackEl.textContent = "Errore avvio fotocamera.";
+        showToast("Impossibile avviare questa fotocamera.", true);
+    }
+}
+
+async function handleCameraChange(event) {
+    // Aggiorna l'indice della fotocamera in base alla selezione dell'utente
+    currentCameraIndex = event.target.selectedIndex;
+    if (currentCameraIndex !== -1) {
+        await startScanningWithCurrentCamera();
+        showToast(`Fotocamera cambiata: ${availableCameras[currentCameraIndex].label || `Fotocamera ${currentCameraIndex + 1}`}`);
+    }
+}
+
+async function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!html5QrCode) {
+        html5QrCode = new window.Html5Qrcode("scanner-reader");
+    }
+
+    try {
+        const decodedText = await html5QrCode.scanFile(file, false);
+        stopScanner();
+        showToast(`Codice trovato!`);
+        if (onDecodeCallback) {
+            onDecodeCallback(decodedText);
+        }
+    } catch (err) {
+        console.error("Errore scansione file:", err);
+        showToast("Nessun codice a barre trovato nell'immagine.", true);
+    } finally {
+        onDecodeCallback = null;
+        event.target.value = ''; // Permette di ricaricare lo stesso file
+    }
+}
+
+async function stopScanner() {
+    const scannerModal = document.getElementById('scanner-modal');
+    scannerModal.classList.add('hidden');
+
+    if (html5QrCode && html5QrCode.isScanning) {
+        try {
+            await html5QrCode.stop();
+        } catch (error) {
+            console.error("Fallimento nel fermare lo scanner.", error);
+        }
+    }
+}
+
+function populateMealForm(foodData) {
+    document.getElementById('food-search').value = foodData.name;
+    document.getElementById('meal-quantity').value = 100;
+    selectedFood = foodData;
+    showToast(`Prodotto trovato: ${foodData.name}`);
+    document.getElementById('meal-quantity').focus();
+    updateMealPreview();
+}
+
+function populateNewFoodForm(foodData) {
+    const section = document.getElementById('new-food-content').closest('.collapsible-section');
+    if (section.classList.contains('collapsed')) {
+        section.querySelector('.section-header').click();
+    }
+    
+    document.getElementById('new-food-name').value = foodData.name;
+    document.getElementById('new-food-calories').value = Math.round(foodData.calories);
+    document.getElementById('new-food-proteins').value = (foodData.proteins || 0).toFixed(1);
+    document.getElementById('new-food-carbs').value = (foodData.carbs || 0).toFixed(1);
+    document.getElementById('new-food-fats').value = (foodData.fats || 0).toFixed(1);
+    document.getElementById('new-food-fibers').value = (foodData.fibers || 0).toFixed(1);
+    
+    showToast(`Dati di "${foodData.name}" importati. Controlla e salva.`);
+    document.getElementById('new-food-name').focus();
 }
