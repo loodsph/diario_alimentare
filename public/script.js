@@ -131,6 +131,7 @@ function setupListeners() {
     document.getElementById('add-meal-btn').addEventListener('click', addMeal);
 
     // Modale di conferma generico
+    document.getElementById('meal-quantity').addEventListener('input', updateMealPreview);
     document.getElementById('save-edit-meal-btn').addEventListener('click', saveMealChanges);
     document.getElementById('cancel-edit-meal-btn').addEventListener('click', () => {
         document.getElementById('edit-meal-modal').classList.add('hidden');
@@ -358,6 +359,7 @@ function setupListeners() {
 
                 document.getElementById('search-results').style.display = 'none';
                 quantityInput.focus();
+                updateMealPreview(); // Aggiorna l'anteprima quando un cibo viene selezionato
             }
         }
 
@@ -1724,6 +1726,7 @@ function resetAddMealForm() {
     document.getElementById('meal-quantity').value = '';
     selectedFood = null;
     document.getElementById('search-results').style.display = 'none';
+    updateMealPreview(); // Nasconde l'anteprima
     document.getElementById('food-search').focus();
 }
 
@@ -2025,4 +2028,37 @@ function updateRecipeBuilderMacroBar() {
     document.getElementById('recipe-builder-macro-proteins-perc').textContent = `${proteinPerc.toFixed(0)}%`;
     document.getElementById('recipe-builder-macro-carbs-perc').textContent = `${carbPerc.toFixed(0)}%`;
     document.getElementById('recipe-builder-macro-fats-perc').textContent = `${fatPerc.toFixed(0)}%`;
+}
+
+function updateMealPreview() {
+    const previewContainer = document.getElementById('meal-preview');
+    const quantity = parseFloat(document.getElementById('meal-quantity').value);
+
+    if (!selectedFood || isNaN(quantity) || quantity <= 0) {
+        previewContainer.classList.add('hidden');
+        return;
+    }
+
+    previewContainer.classList.remove('hidden');
+
+    const ratio = quantity / 100;
+    let foodData = selectedFood;
+
+    // Se è una ricetta, ricalcola i valori per 100g prima di procedere
+    if (selectedFood.isRecipe) {
+        const { totalNutrition, totalWeight } = selectedFood;
+        foodData = {
+            calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
+            proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
+            carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
+            fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
+            fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
+        };
+    }
+
+    document.getElementById('preview-calories').textContent = ((foodData.calories || 0) * ratio).toFixed(0);
+    document.getElementById('preview-proteins').textContent = `${((foodData.proteins || 0) * ratio).toFixed(1)} g`;
+    document.getElementById('preview-carbs').textContent = `${((foodData.carbs || 0) * ratio).toFixed(1)} g`;
+    document.getElementById('preview-fats').textContent = `${((foodData.fats || 0) * ratio).toFixed(1)} g`;
+    document.getElementById('preview-fibers').textContent = `${((foodData.fibers || 0) * ratio).toFixed(1)} g`;
 }

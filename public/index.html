@@ -135,6 +135,17 @@
                         </div>
                     </div>
                     
+                    <div id="meal-preview" class="hidden mt-4 p-4 bg-slate-800/50 rounded-xl text-sm text-slate-300 space-y-2 transition-all duration-300">
+                        <h4 class="font-semibold text-slate-200 mb-2">Anteprima Nutrizionale:</h4>
+                        <div class="grid grid-cols-2 gap-x-4 gap-y-1">
+                            <span><i class="fas fa-fire-alt text-red-400 w-5 text-center mr-1"></i>Calorie:</span> <span id="preview-calories" class="font-bold text-right">0</span>
+                            <span><i class="fas fa-drumstick-bite text-green-400 w-5 text-center mr-1"></i>Proteine:</span> <span id="preview-proteins" class="font-bold text-right">0 g</span>
+                            <span><i class="fas fa-bread-slice text-yellow-400 w-5 text-center mr-1"></i>Carboidrati:</span> <span id="preview-carbs" class="font-bold text-right">0 g</span>
+                            <span><i class="fas fa-bacon text-pink-400 w-5 text-center mr-1"></i>Grassi:</span> <span id="preview-fats" class="font-bold text-right">0 g</span>
+                            <span><i class="fas fa-seedling text-blue-400 w-5 text-center mr-1"></i>Fibre:</span> <span id="preview-fibers" class="font-bold text-right">0 g</span>
+                        </div>
+                    </div>
+                    
                     <button id="add-meal-btn" class="btn-modern btn-primary w-full !py-4 text-lg">
                         <i class="fas fa-plus-circle mr-3"></i>
                         Aggiungi al Diario
