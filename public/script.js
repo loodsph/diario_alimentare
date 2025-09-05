@@ -1865,7 +1865,7 @@ async function resizeImage(file, maxWidth) {
         // Chiudi il bitmap per liberare memoria
         imageBitmap.close();
 
-        const blob = await new Promise(resolve => canvas.toBlob(resolve, file.type, 0.9));
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, file.type, 0.5));
         if (!blob) throw new Error('Creazione Blob per il ridimensionamento fallita.');
 
         return new File([blob], file.name, { type: file.type, lastModified: Date.now() });
@@ -1936,7 +1936,7 @@ function resizeImageFallback(file, maxWidth) {
 
                 if (blob) resolve(new File([blob], file.name, { type: file.type, lastModified: Date.now() }));
                 else reject(new Error('Creazione Blob per il ridimensionamento fallita (fallback).'));
-            }, file.type, 0.9);
+            }, file.type, 0.75);
         };
 
         img.onerror = (err) => {
