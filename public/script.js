@@ -576,6 +576,9 @@ function listenToMeals() {
 
             if (!needsUiUpdate) return;
             allMeals.sort((a, b) => b.jsDate - a.jsDate);
+            
+            // FIX: Invalidate the daily meals cache to force re-rendering with fresh data.
+            dailyMealsCache = {};
             recalculateDailyTotals();
             updateAllUI();
         }    }, (error) => {
