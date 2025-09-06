@@ -1021,10 +1021,10 @@ function updateDateDisplay() {
 }
 
 function renderSelectedDayMeals() {
-    const container = document.getElementById('selected-day-meals');
+    const mainContainer = document.getElementById('selected-day-meals');
     const dateKey = selectedDate.toISOString().split('T')[0];
     let mealsByCategory;
-
+    
     // Controlla se i dati per questo giorno sono già in cache per evitare ricalcoli
     if (dailyMealsCache[dateKey]) {
         mealsByCategory = dailyMealsCache[dateKey];
@@ -1034,22 +1034,47 @@ function renderSelectedDayMeals() {
         const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
         
         mealsByCategory = { '🌅 Colazione': [], '🍽️ Pranzo': [], '🌙 Cena': [], '🍪 Spuntino': [] };
-        dayMeals.forEach(meal => mealsByCategory[meal.type]?.push(meal));
-
+        dayMeals.forEach(meal => {
+            if (mealsByCategory[meal.type]) {
+                mealsByCategory[meal.type].push(meal);
+            }
+        });
+        
         // Ordina ogni categoria una sola volta, al momento della creazione della cache
         Object.values(mealsByCategory).forEach(meals => {
             meals.sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
         });
-
+        
         dailyMealsCache[dateKey] = mealsByCategory; // Salva in cache
     }
-
-    container.innerHTML = '';
-
+    
+    // Se il contenitore principale è vuoto, lo costruiamo per la prima volta.
+    if (mainContainer.innerHTML.trim() === '') {
+        mainContainer.innerHTML = Object.keys(mealsByCategory).map(categoryName => `
+            <div class="meal-category" data-category-name="${categoryName}">
+                <div class="meal-category-header">
+                    <h3 class="text-lg font-semibold text-slate-200">${categoryName}</h3>
+                    <div class="text-sm font-medium text-slate-400 category-totals">
+                        <!-- I totali verranno aggiornati qui -->
+                    </div>
+                </div>
+                <div class="p-4 space-y-3 meal-list-container">
+                    <!-- I pasti verranno renderizzati qui -->
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // Ora aggiorniamo ogni categoria individualmente senza distruggere la struttura.
     Object.entries(mealsByCategory).forEach(([categoryName, meals]) => {
+        const categoryElement = mainContainer.querySelector(`.meal-category[data-category-name="${categoryName}"]`);
+        if (!categoryElement) return; // Salta se l'elemento non esiste
+
+        const listContainer = categoryElement.querySelector('.meal-list-container');
+        const totalsContainer = categoryElement.querySelector('.category-totals');
         const categoryTotals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
         let mealsHTML = '';
-
+        
         if (meals.length > 0) {
             // L'ordinamento è già stato fatto durante la creazione della cache
             mealsHTML = meals.map(meal => {
@@ -1062,7 +1087,7 @@ function renderSelectedDayMeals() {
                 };
                 Object.keys(categoryTotals).forEach(key => categoryTotals[key] += calculated[key]);
                 return `
-                <div class="meal-item" data-id="${meal.id}">
+                <div class="meal-item is-entering" data-id="${meal.id}">
                     <div class="flex justify-between items-center">
                         <div>
                             <p class="font-medium text-slate-200">${meal.name} (${Number(meal.quantity) || 0}g)</p>
@@ -1086,19 +1111,23 @@ function renderSelectedDayMeals() {
         } else {
             mealsHTML = `<div class="text-center text-slate-500 italic py-4">Nessun pasto registrato</div>`;
         }
+        
+        // Aggiorna solo il contenuto della lista e dei totali, preservando la struttura.
+        listContainer.innerHTML = mealsHTML;
+        totalsContainer.innerHTML = `Cal: ${categoryTotals.calories.toFixed(0)} | P: ${categoryTotals.proteins.toFixed(1)}g | C: ${categoryTotals.carbs.toFixed(1)}g | G: ${categoryTotals.fats.toFixed(1)}g | F: ${categoryTotals.fibers.toFixed(1)}g`;
 
-        container.innerHTML += `
-        <div class="meal-category" data-category-name="${categoryName}">
-            <div class="meal-category-header">
-                <h3 class="text-lg font-semibold text-slate-200">${categoryName}</h3>
-                <div class="text-sm font-medium text-slate-400">
-                    Cal: ${categoryTotals.calories.toFixed(0)} | P: ${categoryTotals.proteins.toFixed(1)}g | C: ${categoryTotals.carbs.toFixed(1)}g | G: ${categoryTotals.fats.toFixed(1)}g | F: ${categoryTotals.fibers.toFixed(1)}g
-                </div>
-            </div>
-            <div class="p-4 space-y-3 meal-list-container">${mealsHTML}</div>
-        </div>`;
+        // Applica l'animazione di entrata ai nuovi elementi
+        const newItems = listContainer.querySelectorAll('.meal-item.is-entering');
+        if (newItems.length > 0) {
+            requestAnimationFrame(() => {
+                newItems.forEach(item => {
+                    void item.offsetHeight; // Forza il reflow
+                    item.classList.remove('is-entering');
+                });
+            });
+        }
     });
-
+    
     // initSortableLists();
     updateNutritionProgress();
 }
