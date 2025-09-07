@@ -535,9 +535,10 @@ select.input-modern {
     transition: grid-template-rows 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Contenitore interno per evitare problemi di margine */
-.section-content > div {
+/* Contenitore interno per evitare problemi di margine/padding */
+.section-content-inner {
     min-height: 0;
+    padding-top: 1rem; /* Equivalente di mt-4 */
 }
 
 .collapsible-section:not(.collapsed) .section-content {

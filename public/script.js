@@ -2,7 +2,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { debounce, getDayBounds, formatDate, getMealTimestamp } from './modules/utils.js';
+import { debounce, getDayBounds, formatDate, getMealTimestamp, getTodayUTC } from './modules/utils.js';
 import { showToast, triggerFlashAnimation } from './modules/uiHelpers.js';
 import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -13,7 +13,7 @@ let userId = null;
 let currentSearchResults = [];
 let currentLookupResults = [];
 let selectedFood = null;
-let selectedDate = new Date();
+let selectedDate = getTodayUTC();
 let allMeals = [];
 let dailyMealsCache = {}; // Cache per i pasti giornalieri raggruppati e ordinati
 let dailyTotalsCache = {}; // Cache per i totali nutrizionali giornalieri
@@ -60,8 +60,8 @@ window.addEventListener('DOMContentLoaded', () => {
         if (user) {
             isAppInitialized = false; // Resetta il flag ad ogni login
             try {
-                // Resetta la data a oggi ad ogni login/refresh per coerenza.
-                selectedDate = new Date();
+                // Resetta la data a oggi (UTC) ad ogni login/refresh per coerenza.
+                selectedDate = getTodayUTC();
 
                 userId = user.uid;
                 loginScreen.classList.add('hidden');
@@ -81,6 +81,9 @@ window.addEventListener('DOMContentLoaded', () => {
                 // Ora che tutti i dati sono caricati e processati, aggiorna l'intera UI.
                 updateAllUI();
                 
+                // Avvia il listener per i dati dell'acqua del giorno corrente.
+                listenToWaterData();
+
                 // L'inizializzazione è completata con successo.
                 isAppInitialized = true;
 
@@ -998,18 +1001,18 @@ function updateDateDisplay() {
     
     displayElement.textContent = formatDate(selectedDate);
     
-    const today = new Date();
+    const today = getTodayUTC();
     // Crea nuove date per l'inizio del giorno per evitare di modificare gli oggetti originali
-    // e per garantire che vengano confrontate solo le parti della data.
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const startOfSelectedDay = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+    // e per garantire che vengano confrontate solo le parti della data in UTC.
+    const startOfToday = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const startOfSelectedDay = new Date(Date.UTC(selectedDate.getUTCFullYear(), selectedDate.getUTCMonth(), selectedDate.getUTCDate()));
 
     const diffTime = startOfSelectedDay.getTime() - startOfToday.getTime();
     // Usa Math.round per un calcolo più robusto della differenza di giorni, gestendo piccole differenze di orario e l'ora legale.
     const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
     
     if (diffDays === 0) {
-        infoElement.textContent = "📅 Oggi";
+        infoElement.textContent = "📅 Oggi"; // Questo rimane corretto perché il confronto è tra date UTC
     } else if (diffDays === 1) {
         infoElement.textContent = "⏭️ Domani";
     } else if (diffDays === -1) {
@@ -1020,7 +1023,11 @@ function updateDateDisplay() {
         infoElement.textContent = `📆 ${Math.abs(diffDays)} giorni fa`;
     }
     
-    datePickerElement.value = selectedDate.toISOString().split('T')[0];
+    // Imposta il valore del date picker usando le componenti UTC della data
+    const year = selectedDate.getUTCFullYear();
+    const month = (selectedDate.getUTCMonth() + 1).toString().padStart(2, '0');
+    const day = selectedDate.getUTCDate().toString().padStart(2, '0');
+    datePickerElement.value = `${year}-${month}-${day}`;
 }
 
 function renderSelectedDayMeals() {
@@ -1207,11 +1214,11 @@ function renderRecipes() {
 function renderWeeklyHistory() {
     const container = document.getElementById('weekly-history');
     container.innerHTML = '';
-    const today = new Date(); // Fissa "oggi" all'inizio per coerenza
+    const today = getTodayUTC(); // Fissa "oggi" (UTC) all'inizio per coerenza
     
     for (let i = 6; i >= 0; i--) {
         const date = new Date(today); // Crea una copia di "oggi"
-        date.setDate(today.getDate() - i); // Sottrai i giorni dalla data fissata
+        date.setUTCDate(today.getUTCDate() - i); // Sottrai i giorni dalla data fissata
         const dateKey = date.toISOString().split('T')[0];
         const totals = dailyTotalsCache[dateKey] || { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
         const isToday = i === 0; // Modo più semplice e affidabile per verificare se è oggi
@@ -1221,7 +1228,7 @@ function renderWeeklyHistory() {
         row.className = 'table-row history-row';
         row.dataset.date = date.toISOString();
         row.innerHTML = `
-            <td class="px-6 py-4 whitespace-nowrap text-sm ${dateClass}">${date.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' })} ${isToday ? '(Oggi)' : ''}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm ${dateClass}">${date.toLocaleDateString('it-IT', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })} ${isToday ? '(Oggi)' : ''}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.calories.toFixed(0)}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.proteins.toFixed(1)}g</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${totals.carbs.toFixed(1)}g</td>
@@ -1454,8 +1461,10 @@ async function handleDayChange() {
     // Attendi che l'animazione di fade-out sia visibile
     await new Promise(resolve => setTimeout(resolve, 150));
 
-    listenToWaterData();
+    // Prima aggiorna tutta l'UI con la nuova data
     updateAllUI();
+    // Poi imposta il listener per i dati dell'acqua sulla data corretta
+    listenToWaterData();
 
     // Rimuovi la classe per far apparire il nuovo contenuto con un fade-in
     container.classList.remove('is-updating');
@@ -1463,17 +1472,19 @@ async function handleDayChange() {
 
 function changeDay(offset) {
     if (offset === 0) { // Vai a oggi
-        selectedDate = new Date();
+        selectedDate = getTodayUTC();
     } else {
-        selectedDate.setDate(selectedDate.getDate() + offset);
+        selectedDate.setUTCDate(selectedDate.getUTCDate() + offset);
     }
     handleDayChange();
 }
 
 function handleDateChange(e) {
     const [year, month, day] = e.target.value.split('-').map(Number);
-    // Imposta l'ora a mezzogiorno per evitare problemi con il fuso orario
-    selectedDate = new Date(year, month - 1, day, 12);
+    // BUG FIX: Usa Date.UTC per creare la data. Questo previene problemi di fuso orario
+    // dove il browser potrebbe interpretare la data come il giorno precedente.
+    // new Date("2024-05-25") può diventare 24 Maggio 22:00 UTC in alcuni fusi orari.
+    selectedDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
     handleDayChange();
 }
 
@@ -1556,7 +1567,6 @@ function listenToWaterData() {
     const waterDocRef = doc(db, `users/${userId}/water`, dateString);
 
     waterUnsubscribe = onSnapshot(waterDocRef, (doc) => {
-        const oldCount = waterCount; // Salva il valore precedente
         const data = doc.data();
         const newCount = data?.count || 0;
         waterCount = newCount; // Aggiorna il valore globale

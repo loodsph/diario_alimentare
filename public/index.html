@@ -376,62 +376,64 @@
                     <i class="fas fa-chevron-down toggle-icon"></i>
                 </button>
                 <div id="recipes-content" class="section-content">
-                    <div class="glass-card p-8 rounded-3xl mt-4">
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <div>
-                                <h3 class="text-xl font-bold mb-6">Crea Nuova Ricetta</h3>
-                                <div class="space-y-6">
-                                    <input type="text" id="recipe-name" class="input-modern w-full" placeholder="Nome ricetta">
-                                    <div>
-                                        <label for="recipe-servings" class="block text-sm font-semibold text-slate-300 mb-3">Numero di Porzioni</label>
-                                        <input type="number" id="recipe-servings" class="input-modern w-full" placeholder="es. 4" value="1">
-                                    </div>
-                                    
-                                    <div>
-                                        <label class="block text-sm font-semibold text-slate-300 mb-3">Ingredienti</label>
-                                        <div id="recipe-ingredients" class="space-y-3">
-                                            <div class="ingredient-row flex gap-3 items-start">
-                                                <div class="flex-1 relative">
-                                                    <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off">
-                                                    <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
+                    <div class="section-content-inner">
+                        <div class="glass-card p-8 rounded-3xl">
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                <div>
+                                    <h3 class="text-xl font-bold mb-6">Crea Nuova Ricetta</h3>
+                                    <div class="space-y-6">
+                                        <input type="text" id="recipe-name" class="input-modern w-full" placeholder="Nome ricetta">
+                                        <div>
+                                            <label for="recipe-servings" class="block text-sm font-semibold text-slate-300 mb-3">Numero di Porzioni</label>
+                                            <input type="number" id="recipe-servings" class="input-modern w-full" placeholder="es. 4" value="1">
+                                        </div>
+                                        
+                                        <div>
+                                            <label class="block text-sm font-semibold text-slate-300 mb-3">Ingredienti</label>
+                                            <div id="recipe-ingredients" class="space-y-3">
+                                                <div class="ingredient-row flex gap-3 items-start">
+                                                    <div class="flex-1 relative">
+                                                        <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off">
+                                                        <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
+                                                    </div>
+                                                    <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" aria-label="Quantità ingrediente">
+                                                    <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn" aria-label="Rimuovi ingrediente">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
                                                 </div>
-                                                <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" aria-label="Quantità ingrediente">
-                                                <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn" aria-label="Rimuovi ingrediente">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
+                                            </div>
+                                            <button id="add-ingredient-btn" class="mt-4 text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2">
+                                                <i class="fas fa-plus-circle"></i>
+                                                Aggiungi Ingrediente
+                                            </button>
+                                        </div>
+                                        
+                                        <div id="recipe-builder-macro-bar-container" class="mt-6 pt-6 border-t border-slate-700/50 hidden">
+                                            <p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro Ricetta (in tempo reale)</p>
+                                            <div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
+                                                <div id="recipe-builder-macro-proteins" class="transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: 0%;" title="Proteine"></div>
+                                                <div id="recipe-builder-macro-carbs" class="transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%;" title="Carboidrati"></div>
+                                                <div id="recipe-builder-macro-fats" class="transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 0%;" title="Grassi"></div>
+                                            </div>
+                                            <div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
+                                                <span>P: <span id="recipe-builder-macro-proteins-perc">0%</span></span>
+                                                <span>C: <span id="recipe-builder-macro-carbs-perc">0%</span></span>
+                                                <span>G: <span id="recipe-builder-macro-fats-perc">0%</span></span>
                                             </div>
                                         </div>
-                                        <button id="add-ingredient-btn" class="mt-4 text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2">
-                                            <i class="fas fa-plus-circle"></i>
-                                            Aggiungi Ingrediente
+
+                                        <button id="save-recipe-btn" class="btn-modern btn-success w-full">
+                                            <i class="fas fa-save mr-2"></i>
+                                            Salva Ricetta
                                         </button>
                                     </div>
-                                    
-                                    <div id="recipe-builder-macro-bar-container" class="mt-6 pt-6 border-t border-slate-700/50 hidden">
-                                        <p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro Ricetta (in tempo reale)</p>
-                                        <div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
-                                            <div id="recipe-builder-macro-proteins" class="transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: 0%;" title="Proteine"></div>
-                                            <div id="recipe-builder-macro-carbs" class="transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%;" title="Carboidrati"></div>
-                                            <div id="recipe-builder-macro-fats" class="transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 0%;" title="Grassi"></div>
-                                        </div>
-                                        <div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
-                                            <span>P: <span id="recipe-builder-macro-proteins-perc">0%</span></span>
-                                            <span>C: <span id="recipe-builder-macro-carbs-perc">0%</span></span>
-                                            <span>G: <span id="recipe-builder-macro-fats-perc">0%</span></span>
-                                        </div>
-                                    </div>
-
-                                    <button id="save-recipe-btn" class="btn-modern btn-success w-full">
-                                        <i class="fas fa-save mr-2"></i>
-                                        Salva Ricetta
-                                    </button>
                                 </div>
-                            </div>
-                            
-                            <div>
-                                <h3 class="text-xl font-bold mb-6">Ricette Salvate</h3>
-                                <div id="saved-recipes" class="space-y-4 max-h-96 overflow-y-auto" role="region" aria-label="Ricette salvate">
-                                    </div>
+                                
+                                <div>
+                                    <h3 class="text-xl font-bold mb-6">Ricette Salvate</h3>
+                                    <div id="saved-recipes" class="space-y-4 max-h-96 overflow-y-auto" role="region" aria-label="Ricette salvate">
+                                        </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -449,24 +451,26 @@
                     <i class="fas fa-chevron-down toggle-icon"></i>
                 </button>
                 <div id="history-content" class="section-content">
-                    <div class="glass-card p-8 rounded-3xl mt-4">
-                        <div class="overflow-x-auto">
-                            <table class="w-full" role="table" aria-label="Storico pasti">
-                                <thead>
-                                    <tr class="border-b border-slate-700">
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Data</th>
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Calorie</th>
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Proteine</th>
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Carboidrati</th>
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Grassi</th>
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Fibre</th>
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Acqua</th>
-                                        <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Pasti</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="weekly-history">
-                                    </tbody>
-                            </table>
+                    <div class="section-content-inner">
+                        <div class="glass-card p-8 rounded-3xl">
+                            <div class="overflow-x-auto">
+                                <table class="w-full" role="table" aria-label="Storico pasti">
+                                    <thead>
+                                        <tr class="border-b border-slate-700">
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Data</th>
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Calorie</th>
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Proteine</th>
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Carboidrati</th>
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Grassi</th>
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Fibre</th>
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Acqua</th>
+                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Pasti</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="weekly-history">
+                                        </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -483,23 +487,25 @@
                     <i class="fas fa-chevron-down toggle-icon"></i>
                 </button>
                 <div id="new-food-content" class="section-content">
-                    <div class="glass-card p-8 rounded-3xl mt-4">
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-                            <div class="lg:col-span-3 relative">
-                                 <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-16" aria-label="Nome alimento">
-                                 <button id="scan-barcode-for-new-food-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
-                                    <i class="fas fa-barcode"></i>
+                    <div class="section-content-inner">
+                        <div class="glass-card p-8 rounded-3xl">
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+                                <div class="lg:col-span-3 relative">
+                                     <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-16" aria-label="Nome alimento">
+                                     <button id="scan-barcode-for-new-food-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
+                                        <i class="fas fa-barcode"></i>
+                                    </button>
+                                </div>
+                                <input type="number" id="new-food-calories" class="input-modern" placeholder="Calorie (per 100g)">
+                                <input type="number" id="new-food-proteins" class="input-modern" placeholder="Proteine (g)">
+                                <input type="number" id="new-food-carbs" class="input-modern" placeholder="Carboidrati (g)">
+                                <input type="number" id="new-food-fats" class="input-modern" placeholder="Grassi (g)">
+                                <input type="number" id="new-food-fibers" class="input-modern" placeholder="Fibre (g)">
+                                <button id="add-food-btn" class="btn-modern btn-success lg:col-span-3 w-full">
+                                    <i class="fas fa-plus-circle mr-2"></i>
+                                    Aggiungi Alimento
                                 </button>
                             </div>
-                            <input type="number" id="new-food-calories" class="input-modern" placeholder="Calorie (per 100g)">
-                            <input type="number" id="new-food-proteins" class="input-modern" placeholder="Proteine (g)">
-                            <input type="number" id="new-food-carbs" class="input-modern" placeholder="Carboidrati (g)">
-                            <input type="number" id="new-food-fats" class="input-modern" placeholder="Grassi (g)">
-                            <input type="number" id="new-food-fibers" class="input-modern" placeholder="Fibre (g)">
-                            <button id="add-food-btn" class="btn-modern btn-success lg:col-span-3 w-full">
-                                <i class="fas fa-plus-circle mr-2"></i>
-                                Aggiungi Alimento
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -516,21 +522,23 @@
                     <i class="fas fa-chevron-down toggle-icon"></i>
                 </button>
                 <div id="food-lookup-content" class="section-content">
-                    <div class="glass-card p-8 rounded-3xl mt-4 min-h-96">
-                        <div id="food-lookup-wrapper" class="relative mb-4">
-                            <i id="food-lookup-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 transition-opacity duration-300" aria-hidden="true"></i>
-                            <input type="text" id="food-lookup-search" class="search-input w-full pl-12" placeholder="Cerca un alimento per vederne i dettagli..." aria-label="Cerca alimento nel database" autocomplete="off">
-                            <div id="food-lookup-results-list" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden" role="listbox" aria-label="Risultati ricerca alimento"></div>
-                        </div>
-                        <div id="food-lookup-details" class="mt-6 p-6 bg-slate-800 rounded-xl hidden">
-                            <h4 id="lookup-food-name" class="text-xl font-bold text-slate-200 mb-4"></h4>
-                            <ul class="space-y-3 text-slate-300">
-                                <li><i class="fas fa-fire-alt text-red-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Calorie:</strong> <span id="lookup-food-calories"></span> / 100g</li>
-                                <li><i class="fas fa-drumstick-bite text-green-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Proteine:</strong> <span id="lookup-food-proteins"></span> g</li>
-                                <li><i class="fas fa-bread-slice text-yellow-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Carboidrati:</strong> <span id="lookup-food-carbs"></span> g</li>
-                                <li><i class="fas fa-seedling text-blue-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Fibre:</strong> <span id="lookup-food-fibers"></span> g</li>
-                                <li><i class="fas fa-bacon text-pink-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Grassi:</strong> <span id="lookup-food-fats"></span> g</li>
-                            </ul>
+                    <div class="section-content-inner">
+                        <div class="glass-card p-8 rounded-3xl min-h-96">
+                            <div id="food-lookup-wrapper" class="relative mb-4">
+                                <i id="food-lookup-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 transition-opacity duration-300" aria-hidden="true"></i>
+                                <input type="text" id="food-lookup-search" class="search-input w-full pl-12" placeholder="Cerca un alimento per vederne i dettagli..." aria-label="Cerca alimento nel database" autocomplete="off">
+                                <div id="food-lookup-results-list" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden" role="listbox" aria-label="Risultati ricerca alimento"></div>
+                            </div>
+                            <div id="food-lookup-details" class="mt-6 p-6 bg-slate-800 rounded-xl hidden">
+                                <h4 id="lookup-food-name" class="text-xl font-bold text-slate-200 mb-4"></h4>
+                                <ul class="space-y-3 text-slate-300">
+                                    <li><i class="fas fa-fire-alt text-red-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Calorie:</strong> <span id="lookup-food-calories"></span> / 100g</li>
+                                    <li><i class="fas fa-drumstick-bite text-green-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Proteine:</strong> <span id="lookup-food-proteins"></span> g</li>
+                                    <li><i class="fas fa-bread-slice text-yellow-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Carboidrati:</strong> <span id="lookup-food-carbs"></span> g</li>
+                                    <li><i class="fas fa-seedling text-blue-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Fibre:</strong> <span id="lookup-food-fibers"></span> g</li>
+                                    <li><i class="fas fa-bacon text-pink-500 w-5 text-center mr-2" aria-hidden="true"></i><strong>Grassi:</strong> <span id="lookup-food-fats"></span> g</li>
+                                </ul>
+                            </div>
                         </div>
                     </div>
                 </div>

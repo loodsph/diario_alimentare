@@ -1,4 +1,4 @@
-import { getDayBounds } from './utils.js';
+import { getDayBounds, getTodayUTC } from './utils.js';
 
 let calorieChart = null;
 let macroChart = null;
@@ -67,12 +67,12 @@ export function updateCharts(dailyTotalsCache, selectedDate) {
     const calorieLabels = [];
     const calorieData = [];
     for (let i = 6; i >= 0; i--) {
-        const date = new Date(); // Inizia da oggi
-        date.setDate(date.getDate() - i);
+        const date = getTodayUTC(); // Inizia da oggi (UTC)
+        date.setUTCDate(date.getUTCDate() - i);
         const dateKey = date.toISOString().split('T')[0];
         const dayTotals = dailyTotalsCache[dateKey];
         const dayCalories = dayTotals ? dayTotals.calories : 0;
-        calorieLabels.push(date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }));
+        calorieLabels.push(date.toLocaleDateString('it-IT', { timeZone: 'UTC', day: 'numeric', month: 'short' }));
         calorieData.push(dayCalories.toFixed(0));
     }
     calorieChart.data.labels = calorieLabels;
