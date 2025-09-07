@@ -15,7 +15,7 @@ export function getTodayUTC() {
     // Usa i componenti della data locale (getFullYear, etc.) per costruire la data UTC.
     // Usare getUTCFullYear() può causare un errore di un giorno a seconda del fuso orario.
     // Se sono le 01:00 del 7 Settembre in GMT+2, in UTC sono ancora le 23:00 del 6 Settembre.
-    return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 12, 0, 0));
+    return new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0));
 }
 
 export function getDayBounds(date) {
