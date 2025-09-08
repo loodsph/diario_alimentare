@@ -1,0 +1,23 @@
+{
+  "name": "diario_alimentare",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/loodsph/diario_alimentare.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/loodsph/diario_alimentare/issues"
+  },
+  "homepage": "https://github.com/loodsph/diario_alimentare#readme",
+  "description": "",
+  "dependencies": {
+    "firebase": "^12.2.1"
+  }
+}

@@ -1243,13 +1243,19 @@ function renderWeeklyHistory() {
 
 function updateNutritionProgress() {
     const dateKey = selectedDate.toISOString().split('T')[0];
-    const totals = dailyTotalsCache[dateKey] || { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+    const totals = dailyTotalsCache[dateKey] || { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };    
     const { start, end } = getDayBounds(selectedDate);
     const dayMeals = allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end);
     
     // Aggiorna i totali principali
     const updateAndAnimateTotal = (id, value, decimals = 0) => {
-        document.getElementById(id).textContent = value.toFixed(decimals);
+        // FIX: Aggiunto controllo per valori non numerici per prevenire crash.
+        const numericValue = Number(value);
+        if (isNaN(numericValue)) {
+            console.warn(`Tentativo di aggiornare ${id} con un valore non valido:`, value);
+            return; // Interrompe l'aggiornamento se il valore non è un numero
+        }
+        document.getElementById(id).textContent = numericValue.toFixed(decimals);
         triggerFlashAnimation(id);
     };
 
@@ -1261,7 +1267,13 @@ function updateNutritionProgress() {
 
     // Aggiorna le barre di progresso
     const updateProgress = (type, value) => {
-        const percent = Math.min(100, (value / nutritionGoals[type]) * 100);
+        // FIX: Aggiunto controllo per valori non numerici.
+        const numericValue = Number(value);
+        if (isNaN(numericValue)) {
+            console.warn(`Valore non valido per la barra di progresso ${type}:`, value);
+            return; // Non aggiornare la barra se il valore è invalido
+        }
+        const percent = Math.min(100, (numericValue / (nutritionGoals[type] || 1)) * 100); // Evita divisione per zero
         document.getElementById(`${type}-progress`).style.width = `${percent}%`;
         document.getElementById(`${type}-progress-text`).textContent = `${value.toFixed(type === 'calories' ? 0 : 1)}${type !== 'calories' ? 'g' : ''} / ${nutritionGoals[type]}${type !== 'calories' ? 'g' : ''}`;
     };
@@ -1502,12 +1514,85 @@ function resetAppData() {
 
 function showFoodLookupDetails(food) {
     const detailsContainer = document.getElementById('food-lookup-details');
+    const detailsList = document.getElementById('lookup-food-details-list');
     document.getElementById('lookup-food-name').textContent = food.name;
-    document.getElementById('lookup-food-calories').textContent = food.calories;
-    document.getElementById('lookup-food-proteins').textContent = food.proteins;
-    document.getElementById('lookup-food-carbs').textContent = food.carbs;
-    document.getElementById('lookup-food-fats').textContent = food.fats;
-    document.getElementById('lookup-food-fibers').textContent = food.fibers || 0;
+
+    // Pulisce la lista precedente
+    detailsList.innerHTML = '';
+
+    // Mappa per definire nomi, unità e icone
+    const nutrientMap = {
+        // Macronutrienti (usando i nomi base per coerenza)
+        calories: { name: 'Calorie', unit: 'kcal', icon: 'fa-fire-alt text-red-500' },
+        proteins: { name: 'Proteine', unit: 'g', icon: 'fa-drumstick-bite text-green-500' },
+        carbs: { name: 'Carboidrati', unit: 'g', icon: 'fa-bread-slice text-yellow-500' },
+        fats: { name: 'Grassi', unit: 'g', icon: 'fa-bacon text-pink-500' },
+        fibers: { name: 'Fibre', unit: 'g', icon: 'fa-seedling text-blue-500' },
+        amido: { name: 'Amido', unit: 'g', icon: 'fa-bread-slice text-yellow-500' },
+        zuccheri_solubili: { name: 'Zuccheri', unit: 'g', icon: 'fa-bread-slice text-yellow-500' },
+        acqua: { name: 'Acqua', unit: 'g', icon: 'fa-tint text-cyan-400' },
+        colesterolo: { name: 'Colesterolo', unit: 'mg', icon: 'fa-bacon text-pink-500' },
+        
+        // Minerali
+        calcio: { name: 'Calcio', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        sodio: { name: 'Sodio', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        potassio: { name: 'Potassio', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        ferro: { name: 'Ferro', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        fosforo: { name: 'Fosforo', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        zinco: { name: 'Zinco', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        magnesio: { name: 'Magnesio', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        rame: { name: 'Rame', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        selenio: { name: 'Selenio', unit: 'µg', icon: 'fa-atom text-gray-400' },
+        manganese: { name: 'Manganese', unit: 'mg', icon: 'fa-atom text-gray-400' },
+
+        // Vitamine
+        vitamina_c: { name: 'Vitamina C', unit: 'mg', icon: 'fa-capsules text-orange-400' },
+        tiamina: { name: 'Vitamina B1 (Tiamina)', unit: 'mg', icon: 'fa-capsules text-orange-400' },
+        riboflavina: { name: 'Vitamina B2 (Riboflavina)', unit: 'mg', icon: 'fa-capsules text-orange-400' },
+        niacina: { name: 'Vitamina B3 (Niacina)', unit: 'mg', icon: 'fa-capsules text-orange-400' },
+        vitamina_b6: { name: 'Vitamina B6', unit: 'mg', icon: 'fa-capsules text-orange-400' },
+        vitamina_b12: { name: 'Vitamina B12', unit: 'µg', icon: 'fa-capsules text-orange-400' },
+        folati: { name: 'Folati (B9)', unit: 'µg', icon: 'fa-capsules text-orange-400' },
+        vitamina_a_retinolo_equivalente: { name: 'Vitamina A', unit: 'µg', icon: 'fa-capsules text-orange-400' },
+        vitamina_d: { name: 'Vitamina D', unit: 'µg', icon: 'fa-capsules text-orange-400' },
+        vitamina_e: { name: 'Vitamina E', unit: 'mg', icon: 'fa-capsules text-orange-400' },
+    };
+
+    const formatKey = (key) => key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+    const displayOrder = ['calories', 'proteins', 'carbs', 'fats', 'fibers'];
+    const excludedFields = new Set(['name', 'name_lowercase', 'original_id', 'source_url', 'energia', 'energia_kj', 'proteine', 'carboidrati_disponibili', 'lipidi', 'fibra_totale', 'fibra_alimentare_solubile_in_acqua_e_insolubile']);
+
+    const keysToShow = [
+        ...displayOrder,
+        ...Object.keys(food).sort()
+    ];
+
+    const uniqueKeys = [...new Set(keysToShow)].filter(key => !excludedFields.has(key) && food.hasOwnProperty(key) && typeof food[key] === 'number');
+
+    let htmlContent = '';
+    for (const key of uniqueKeys) {
+        if (food[key] > 0) { // Mostra solo se il valore è maggiore di zero
+            const info = nutrientMap[key];
+            const displayName = info ? info.name : formatKey(key);
+            const unit = info ? ` ${info.unit}` : '';
+            const icon = info ? info.icon : 'fa-atom text-gray-400';
+            
+            htmlContent += `
+                <li>
+                    <i class="fas ${info.icon} w-5 text-center mr-2" aria-hidden="true"></i>
+                    <strong>${info.name}:</strong> 
+                    <span>${food[key]}${unit}</span>
+                </li>`;
+        }
+    }
+
+    if (htmlContent === '') {
+        detailsList.innerHTML = `<li class="col-span-full text-slate-400">Nessun dato nutrizionale dettagliato disponibile per questo alimento.</li>`;
+    } else {
+        detailsList.innerHTML = htmlContent;
+    }
+    
     detailsContainer.classList.remove('hidden');
 }
 
@@ -1755,12 +1840,28 @@ function recalculateDailyTotals() {
             dailyTotalsCache[dateKey] = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
         }
         const ratio = (Number(meal.quantity) || 0) / 100;
-        const totals = dailyTotalsCache[dateKey];
-        totals.calories += (Number(meal.calories) || 0) * ratio;
-        totals.proteins += (Number(meal.proteins) || 0) * ratio;
-        totals.carbs += (Number(meal.carbs) || 0) * ratio;
-        totals.fats += (Number(meal.fats) || 0) * ratio;
-        totals.fibers += (Number(meal.fibers) || 0) * ratio;
+        const totals = dailyTotalsCache[dateKey]; 
+        // FIX: Rende il calcolo più robusto, usando i nuovi campi come fallback
+        // per garantire che i totali non diventino NaN (Not a Number).
+        const mealCalories = meal.calories ?? meal.energia_kcal ?? 0;
+        const mealProteins = meal.proteins ?? meal.proteine ?? 0;
+        const mealCarbs = meal.carbs ?? meal.carboidrati_disponibili ?? 0;
+        const mealFats = meal.fats ?? meal.lipidi ?? 0;
+        const mealFibers = meal.fibers ?? meal.fibra_alimentare_solubile_in_acqua_e_insolubile ?? meal.fibra_totale ?? 0;
+
+        // FIX: Aggiunto controllo isNaN per ogni valore prima di sommarlo.
+        // Questo previene la propagazione di NaN (Not a Number) nei totali.
+        const cal = (Number(mealCalories) || 0) * ratio;
+        const pro = (Number(mealProteins) || 0) * ratio;
+        const car = (Number(mealCarbs) || 0) * ratio;
+        const fat = (Number(mealFats) || 0) * ratio;
+        const fib = (Number(mealFibers) || 0) * ratio;
+
+        if (!isNaN(cal)) totals.calories += cal;
+        if (!isNaN(pro)) totals.proteins += pro;
+        if (!isNaN(car)) totals.carbs += car;
+        if (!isNaN(fat)) totals.fats += fat;
+        if (!isNaN(fib)) totals.fibers += fib;
     });
 }
 

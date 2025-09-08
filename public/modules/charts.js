@@ -64,25 +64,27 @@ export function updateCharts(dailyTotalsCache, selectedDate) {
     if (!calorieChart || !macroChart) return;
 
     // Grafico calorie (ultimi 7 giorni)
-    const calorieLabels = [];
-    const calorieData = [];
+    const calorieLabels7Days = [];
+    const calorieData7Days = [];
     for (let i = 6; i >= 0; i--) {
         const date = getTodayUTC(); // Inizia da oggi (UTC)
         date.setUTCDate(date.getUTCDate() - i);
         const dateKey = date.toISOString().split('T')[0];
         const dayTotals = dailyTotalsCache[dateKey];
-        const dayCalories = dayTotals ? dayTotals.calories : 0;
-        calorieLabels.push(date.toLocaleDateString('it-IT', { timeZone: 'UTC', day: 'numeric', month: 'short' }));
-        calorieData.push(dayCalories.toFixed(0));
+        const dayCalories = (dayTotals && !isNaN(dayTotals.calories)) ? dayTotals.calories : 0;
+        calorieLabels7Days.push(date.toLocaleDateString('it-IT', { timeZone: 'UTC', day: 'numeric', month: 'short' }));
+        calorieData7Days.push(dayCalories.toFixed(0));
     }
-    calorieChart.data.labels = calorieLabels;
-    calorieChart.data.datasets[0].data = calorieData;
-    calorieChart.update();
-    
+    calorieChart.data.labels = calorieLabels7Days;
+    calorieChart.data.datasets[0].data = calorieData7Days;
+
     // Grafico macro (giorno selezionato)
     const selectedDateKey = selectedDate.toISOString().split('T')[0];
-    const dayTotals = dailyTotalsCache[selectedDateKey] || { proteins: 0, carbs: 0, fats: 0 };
-    macroChart.data.datasets[0].data = [dayTotals.proteins, dayTotals.carbs, dayTotals.fats];
+    const selectedDayTotals = dailyTotalsCache[selectedDateKey] || { proteins: 0, carbs: 0, fats: 0 };
+    const macroData = [Number(selectedDayTotals.proteins) || 0, Number(selectedDayTotals.carbs) || 0, Number(selectedDayTotals.fats) || 0];
+    macroChart.data.datasets[0].data = macroData;
+    
+    calorieChart.update();
     macroChart.update();
 }
 
