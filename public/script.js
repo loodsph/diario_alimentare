@@ -1514,85 +1514,109 @@ function resetAppData() {
 
 function showFoodLookupDetails(food) {
     const detailsContainer = document.getElementById('food-lookup-details');
-    const detailsList = document.getElementById('lookup-food-details-list');
+    const detailsList = document.getElementById('lookup-food-details-list'); // Assicurati che questo ID esista nell'HTML
     document.getElementById('lookup-food-name').textContent = food.name;
 
     // Pulisce la lista precedente
     detailsList.innerHTML = '';
 
-    // Mappa per definire nomi, unità e icone
+    // Mappa per definire nomi, unità, icone e gruppi
     const nutrientMap = {
-        // Macronutrienti (usando i nomi base per coerenza)
-        calories: { name: 'Calorie', unit: 'kcal', icon: 'fa-fire-alt text-red-500' },
-        proteins: { name: 'Proteine', unit: 'g', icon: 'fa-drumstick-bite text-green-500' },
-        carbs: { name: 'Carboidrati', unit: 'g', icon: 'fa-bread-slice text-yellow-500' },
-        fats: { name: 'Grassi', unit: 'g', icon: 'fa-bacon text-pink-500' },
-        fibers: { name: 'Fibre', unit: 'g', icon: 'fa-seedling text-blue-500' },
-        amido: { name: 'Amido', unit: 'g', icon: 'fa-bread-slice text-yellow-500' },
-        zuccheri_solubili: { name: 'Zuccheri', unit: 'g', icon: 'fa-bread-slice text-yellow-500' },
-        acqua: { name: 'Acqua', unit: 'g', icon: 'fa-tint text-cyan-400' },
-        colesterolo: { name: 'Colesterolo', unit: 'mg', icon: 'fa-bacon text-pink-500' },
+        // Macronutrienti
+        calories: { name: 'Calorie', unit: 'kcal', icon: 'fa-fire-alt text-red-500', group: 'macro' },
+        proteins: { name: 'Proteine', unit: 'g', icon: 'fa-drumstick-bite text-green-500', group: 'macro' },
+        carbs: { name: 'Carboidrati', unit: 'g', icon: 'fa-bread-slice text-yellow-500', group: 'macro' },
+        fats: { name: 'Grassi', unit: 'g', icon: 'fa-bacon text-pink-500', group: 'macro' },
+        fibers: { name: 'Fibre', unit: 'g', icon: 'fa-seedling text-blue-500', group: 'macro' },
+        amido_g: { name: 'Amido', unit: 'g', icon: 'fa-bread-slice text-yellow-500', group: 'macro' },
+        zuccheri_solubili_g: { name: 'Zuccheri', unit: 'g', icon: 'fa-bread-slice text-yellow-500', group: 'macro' },
+        acqua_g: { name: 'Acqua', unit: 'g', icon: 'fa-tint text-cyan-400', group: 'macro' },
+        colesterolo_mg: { name: 'Colesterolo', unit: 'mg', icon: 'fa-bacon text-pink-500', group: 'macro' },
         
         // Minerali
-        calcio: { name: 'Calcio', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        sodio: { name: 'Sodio', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        potassio: { name: 'Potassio', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        ferro: { name: 'Ferro', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        fosforo: { name: 'Fosforo', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        zinco: { name: 'Zinco', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        magnesio: { name: 'Magnesio', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        rame: { name: 'Rame', unit: 'mg', icon: 'fa-atom text-gray-400' },
-        selenio: { name: 'Selenio', unit: 'µg', icon: 'fa-atom text-gray-400' },
-        manganese: { name: 'Manganese', unit: 'mg', icon: 'fa-atom text-gray-400' },
+        calcio_mg: { name: 'Calcio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        sodio_mg: { name: 'Sodio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        potassio_mg: { name: 'Potassio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        ferro_mg: { name: 'Ferro', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        fosforo_mg: { name: 'Fosforo', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        zinco_mg: { name: 'Zinco', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        magnesio_mg: { name: 'Magnesio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        rame_mg: { name: 'Rame', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        selenio_mcg: { name: 'Selenio', unit: 'µg', icon: 'fa-atom text-gray-400', group: 'mineral' },
+        manganese_mg: { name: 'Manganese', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
 
         // Vitamine
-        vitamina_c: { name: 'Vitamina C', unit: 'mg', icon: 'fa-capsules text-orange-400' },
-        tiamina: { name: 'Vitamina B1 (Tiamina)', unit: 'mg', icon: 'fa-capsules text-orange-400' },
-        riboflavina: { name: 'Vitamina B2 (Riboflavina)', unit: 'mg', icon: 'fa-capsules text-orange-400' },
-        niacina: { name: 'Vitamina B3 (Niacina)', unit: 'mg', icon: 'fa-capsules text-orange-400' },
-        vitamina_b6: { name: 'Vitamina B6', unit: 'mg', icon: 'fa-capsules text-orange-400' },
-        vitamina_b12: { name: 'Vitamina B12', unit: 'µg', icon: 'fa-capsules text-orange-400' },
-        folati: { name: 'Folati (B9)', unit: 'µg', icon: 'fa-capsules text-orange-400' },
-        vitamina_a_retinolo_equivalente: { name: 'Vitamina A', unit: 'µg', icon: 'fa-capsules text-orange-400' },
-        vitamina_d: { name: 'Vitamina D', unit: 'µg', icon: 'fa-capsules text-orange-400' },
-        vitamina_e: { name: 'Vitamina E', unit: 'mg', icon: 'fa-capsules text-orange-400' },
+        vitamina_c_mg: { name: 'Vitamina C', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        tiamina_mg: { name: 'Vitamina B1', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        riboflavina_mg: { name: 'Vitamina B2', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        niacina_mg: { name: 'Vitamina B3', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        vitamina_b6_mg: { name: 'Vitamina B6', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        vitamina_b12_mcg: { name: 'Vitamina B12', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        folati_mcg: { name: 'Folati (B9)', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        vitamina_a_retinolo_equivalente_mcg: { name: 'Vitamina A', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        vitamina_d_mcg: { name: 'Vitamina D', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
+        vitamina_e_mg: { name: 'Vitamina E', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
     };
 
-    const formatKey = (key) => key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+    const groups = {
+        macro: { title: 'Macronutrienti Principali', items: [], order: 1 },
+        mineral: { title: 'Minerali', items: [], order: 2 },
+        vitamin: { title: 'Vitamine', items: [], order: 3 },
+        other: { title: 'Altri Nutrienti', items: [], order: 4 }
+    };
 
-    const displayOrder = ['calories', 'proteins', 'carbs', 'fats', 'fibers'];
-    const excludedFields = new Set(['name', 'name_lowercase', 'original_id', 'source_url', 'energia', 'energia_kj', 'proteine', 'carboidrati_disponibili', 'lipidi', 'fibra_totale', 'fibra_alimentare_solubile_in_acqua_e_insolubile']);
+    const excludedFields = new Set(['name', 'name_lowercase', 'original_id', 'source_url', 'energia_kj']);
 
-    const keysToShow = [
-        ...displayOrder,
-        ...Object.keys(food).sort()
-    ];
-
-    const uniqueKeys = [...new Set(keysToShow)].filter(key => !excludedFields.has(key) && food.hasOwnProperty(key) && typeof food[key] === 'number');
-
-    let htmlContent = '';
-    for (const key of uniqueKeys) {
-        if (food[key] > 0) { // Mostra solo se il valore è maggiore di zero
+    for (const key in food) {
+        if (food.hasOwnProperty(key) && !excludedFields.has(key) && typeof food[key] === 'number' && food[key] > 0) {
             const info = nutrientMap[key];
-            const displayName = info ? info.name : formatKey(key);
-            const unit = info ? ` ${info.unit}` : '';
-            const icon = info ? info.icon : 'fa-atom text-gray-400';
+            const groupKey = info ? info.group : 'other';
             
-            htmlContent += `
-                <li>
-                    <i class="fas ${info.icon} w-5 text-center mr-2" aria-hidden="true"></i>
-                    <strong>${info.name}:</strong> 
-                    <span>${food[key]}${unit}</span>
-                </li>`;
+            if (groups[groupKey]) {
+                groups[groupKey].items.push({
+                    key: key,
+                    value: food[key],
+                    ...info
+                });
+            }
         }
     }
+
+    // Ordina i macronutrienti principali
+    const macroOrder = ['calories', 'proteins', 'carbs', 'fats', 'fibers'];
+    groups.macro.items.sort((a, b) => {
+        const indexA = macroOrder.indexOf(a.key);
+        const indexB = macroOrder.indexOf(b.key);
+        if (indexA === -1 && indexB === -1) return a.name.localeCompare(b.name);
+        if (indexA === -1) return 1;
+        if (indexB === -1) return -1;
+        return indexA - indexB;
+    });
+
+    let htmlContent = '';
+    Object.values(groups).sort((a, b) => a.order - b.order).forEach(group => {
+        if (group.items.length > 0) {
+            htmlContent += `<li class="nutrient-group-header col-span-full">${group.title}</li>`;
+            group.items.forEach(item => {
+                const displayName = item.name || item.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                const unit = item.unit ? ` ${item.unit}` : '';
+                const icon = item.icon || 'fa-atom text-gray-400';
+                
+                htmlContent += `
+                    <li>
+                        <i class="fas ${icon} w-5 text-center mr-2" aria-hidden="true"></i>
+                        <strong>${displayName}:</strong> 
+                        <span>${item.value}${unit}</span>
+                    </li>`;
+            });
+        }
+    });
 
     if (htmlContent === '') {
         detailsList.innerHTML = `<li class="col-span-full text-slate-400">Nessun dato nutrizionale dettagliato disponibile per questo alimento.</li>`;
     } else {
         detailsList.innerHTML = htmlContent;
     }
-    
     detailsContainer.classList.remove('hidden');
 }
 
@@ -1843,11 +1867,11 @@ function recalculateDailyTotals() {
         const totals = dailyTotalsCache[dateKey]; 
         // FIX: Rende il calcolo più robusto, usando i nuovi campi come fallback
         // per garantire che i totali non diventino NaN (Not a Number).
-        const mealCalories = meal.calories ?? meal.energia_kcal ?? 0;
-        const mealProteins = meal.proteins ?? meal.proteine ?? 0;
-        const mealCarbs = meal.carbs ?? meal.carboidrati_disponibili ?? 0;
-        const mealFats = meal.fats ?? meal.lipidi ?? 0;
-        const mealFibers = meal.fibers ?? meal.fibra_alimentare_solubile_in_acqua_e_insolubile ?? meal.fibra_totale ?? 0;
+        const mealCalories = meal.calories ?? meal.energia_kcal ?? 0; // Corretto
+        const mealProteins = meal.proteins ?? meal.proteine_g ?? 0;
+        const mealCarbs = meal.carbs ?? meal.carboidrati_disponibili_g ?? 0;
+        const mealFats = meal.fats ?? meal.lipidi_g ?? 0;
+        const mealFibers = meal.fibers ?? meal.fibra_totale_g ?? 0;
 
         // FIX: Aggiunto controllo isNaN per ogni valore prima di sommarlo.
         // Questo previene la propagazione di NaN (Not a Number) nei totali.

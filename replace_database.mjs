@@ -37,11 +37,13 @@ function parseNutrientValue(value) {
  * @returns {string} La chiave convertita.
  */
 function sanitizeFieldName(key) {
-    // FIX: Regex corretta per rimuovere le unità di misura tra parentesi.
+    // FIX: Regex migliorata per non creare collisioni e gestire caratteri speciali.
     return key
         .toLowerCase()
-        .replace(/\s\(.*\)/, '') // Rimuove lo spazio e tutto ciò che è tra parentesi (es. " (g)")
-        .replace(/[^a-z0-9]/g, '_') // Sostituisce i caratteri non alfanumerici con _
+        .replace(/\(μg\)/g, '_mcg')  // Sostituisce (μg) in modo specifico
+        .replace(/[()]/g, '')       // Rimuove le parentesi
+        .replace(/[\s-]/g, '_')     // Sostituisce spazi e trattini con underscore
+        .replace(/[^a-z0-9_]/g, '')  // Rimuove altri caratteri non validi
         .replace(/_+/g, '_') // Rimuove eventuali underscore doppi
         .replace(/_$/, ''); // Rimuove l'underscore finale se presente
 }
@@ -119,11 +121,11 @@ async function replaceData() {
 
             // --- FIX CRUCIALE ---
             // Aggiunge i campi "base" per compatibilità con l'app, usando i nuovi campi come fonte.
-            newFoodData.calories = newFoodData.energia || 0;
-            newFoodData.proteins = newFoodData.proteine || 0;
-            newFoodData.carbs = newFoodData.carboidrati_disponibili || 0;
-            newFoodData.fats = newFoodData.lipidi || 0;
-            newFoodData.fibers = newFoodData.fibra_alimentare_solubile_in_acqua_e_insolubile || newFoodData.fibra_totale || 0;
+            newFoodData.calories = newFoodData.energia_kcal || 0;
+            newFoodData.proteins = newFoodData.proteine_g || 0;
+            newFoodData.carbs = newFoodData.carboidrati_disponibili_g || 0;
+            newFoodData.fats = newFoodData.lipidi_g || 0;
+            newFoodData.fibers = newFoodData.fibra_totale_g || 0;
 
             const newFoodRef = doc(foodsCollection);
             currentBatch.set(newFoodRef, newFoodData);

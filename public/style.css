@@ -654,3 +654,16 @@ select.input-modern {
     font-weight: bold;
     color: white;
 }
+
+.nutrient-group-header {
+    font-size: 1.125rem; /* text-lg */
+    font-weight: 700; /* font-bold */
+    color: #a78bfa; /* purple-400 */
+    margin-top: 1.5rem; /* mt-6 */
+    padding-bottom: 0.5rem; /* pb-2 */
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2); /* border-b border-slate-700 */
+}
+
+.nutrient-group-header:first-child {
+    margin-top: 0;
+}
