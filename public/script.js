@@ -10,8 +10,6 @@ import { firebaseConfig } from './firebase-config.js';
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
 let app, auth, db;
 let userId = null;
-let currentSearchResults = [];
-let currentLookupResults = [];
 let selectedFood = null;
 let selectedDate = getTodayUTC();
 let allMeals = [];
@@ -176,67 +174,68 @@ function setupListeners() {
     document.getElementById('scan-from-file-btn').addEventListener('click', () => document.getElementById('barcode-file-input').click());
     document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
 
-    foodSearchInput.addEventListener('input', debounce(async (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        const resultsContainer = document.getElementById('search-results');
-        
-        if (searchTerm.length >= 2) {
-            currentSearchResults = await searchFoodsAndRecipes(searchTerm);
-            
-            if (currentSearchResults.length > 0) {
-                resultsContainer.innerHTML = currentSearchResults.map(item => {
-                    if (item.isRecipe) {
-                        const servingWeight = (item.totalWeight / item.servings).toFixed(0);
-                        return `
-                        <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}" data-is-recipe="true">
-                            <div class="font-medium text-slate-200"><i class="fas fa-book text-orange-400 mr-2"></i>${item.name}</div>
-                            <div class="text-sm text-slate-400">Ricetta - 1 porzione (~${servingWeight}g)</div>
-                        </div>`;
-                    }
-                    return `
-                    <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
-                        <div class="font-medium text-slate-200">${item.name}</div>
-                        <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
-                    </div>`;
-                }).join('');
+    // --- IMPOSTAZIONE DEI GESTORI DI RICERCA REFACTORIZZATI ---
+
+    // Gestore per la ricerca principale (Aggiungi Pasto)
+    setupSearchHandler({
+        inputElement: foodSearchInput,
+        resultsContainer: document.getElementById('search-results'),
+        searchFunction: searchFoodsAndRecipes,
+        onResultClick: (item) => {
+            selectedFood = item;
+            foodSearchInput.value = item.name;
+            const quantityInput = document.getElementById('meal-quantity');
+            if (item.isRecipe) {
+                const servingWeight = item.totalWeight / item.servings;
+                quantityInput.value = servingWeight.toFixed(0);
             } else {
-                resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun risultato trovato.</div>`;
+                quantityInput.value = '100';
             }
-            resultsContainer.style.display = 'block';
-        } else {
-            resultsContainer.style.display = 'none';
-            currentSearchResults = [];
+            quantityInput.focus();
+            updateMealPreview();
+        },
+        itemRenderer: (item) => {
+            if (item.isRecipe) {
+                const servingWeight = (item.totalWeight / item.servings).toFixed(0);
+                return `
+                <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
+                    <div class="font-medium text-slate-200"><i class="fas fa-book text-orange-400 mr-2"></i>${item.name}</div>
+                    <div class="text-sm text-slate-400">Ricetta - 1 porzione (~${servingWeight}g)</div>
+                </div>`;
+            }
+            return `
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
+                <div class="font-medium text-slate-200">${item.name}</div>
+                <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
+            </div>`;
         }
-    }, 300));
+    });
 
     foodSearchInput.addEventListener('focus', () => {
         document.getElementById('food-search-icon').classList.add('opacity-0');
     });
     foodSearchInput.addEventListener('blur', () => {
-        if (foodSearchInput.value === '') {
-            document.getElementById('food-search-icon').classList.remove('opacity-0');
-        }
+        if (foodSearchInput.value === '') document.getElementById('food-search-icon').classList.remove('opacity-0');
     });
 
     const foodLookupInput = document.getElementById('food-lookup-search');
-    foodLookupInput.addEventListener('input', debounce(async (e) => {
-        const searchTerm = e.target.value.toLowerCase();
-        const resultsContainer = document.getElementById('food-lookup-results-list');
-        const detailsContainer = document.getElementById('food-lookup-details');
-        const itemRenderer = food => `
-            <div class="lookup-item p-4 hover:bg-slate-700 cursor-pointer" data-food-id="${food.id}">
+    // Gestore per la ricerca nel database
+    setupSearchHandler({
+        inputElement: foodLookupInput,
+        resultsContainer: document.getElementById('food-lookup-results-list'),
+        searchFunction: searchFoodsOnly,
+        onResultClick: (item) => {
+            foodLookupInput.value = item.name;
+            showFoodLookupDetails(item);
+        },
+        itemRenderer: (item) => `
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
                 <div class="font-medium text-slate-200">${food.name}</div>
                 <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
             </div>
-        `;
-        if (searchTerm.length >= 2) {
-            currentLookupResults = await handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer);
-        } else {
-            resultsContainer.style.display = 'none';
-            detailsContainer.classList.add('hidden');
-            currentLookupResults = [];
-        }
-    }, 300));
+        `
+    });
+
     foodLookupInput.addEventListener('focus', () => {
         document.getElementById('food-lookup-search-icon').classList.add('opacity-0');
         // Ripristina l'espansione automatica della sezione quando si fa focus sull'input
@@ -246,9 +245,7 @@ function setupListeners() {
         }
     });
     foodLookupInput.addEventListener('blur', () => {
-        if (foodLookupInput.value === '') {
-            document.getElementById('food-lookup-search-icon').classList.remove('opacity-0');
-        }
+        if (foodLookupInput.value === '') document.getElementById('food-lookup-search-icon').classList.remove('opacity-0');
     });
 
     // *** GESTIONE EVENTI CENTRALIZZATA (EVENT DELEGATION) ***
@@ -263,6 +260,10 @@ function setupListeners() {
         const lookupResults = document.getElementById('food-lookup-results-list');
         if (lookupResults.style.display === 'block' && !target.closest('#food-lookup-wrapper')) { 
             lookupResults.style.display = 'none';
+        }
+        const recipeResults = document.querySelector('.recipe-ingredient-results');
+        if (recipeResults && recipeResults.style.display === 'block' && !target.closest('.ingredient-row')) {
+            recipeResults.style.display = 'none';
         }
 
         // Se clicco fuori da un pasto attivo, lo disattivo
@@ -344,47 +345,6 @@ function setupListeners() {
         if (useRecipeBtn) {
             const recipeId = useRecipeBtn.dataset.recipeId;
             if (recipeId) useRecipe(recipeId);
-        }
-
-        // Seleziona alimento dalla ricerca pasto
-        const searchItem = target.closest('.search-item');
-        if (searchItem) {
-            const itemId = searchItem.dataset.itemId;
-            const isRecipe = searchItem.dataset.isRecipe === 'true';
-            
-            selectedFood = currentSearchResults.find(item => item.id === itemId);
-
-            if (selectedFood) {
-                const foodSearchInput = document.getElementById('food-search');
-                const quantityInput = document.getElementById('meal-quantity');
-
-                foodSearchInput.value = selectedFood.name;
-                
-                if (isRecipe) {
-                    // Se è una ricetta, calcoliamo il peso di una porzione e lo impostiamo come quantità
-                    const servingWeight = selectedFood.totalWeight / selectedFood.servings;
-                    quantityInput.value = servingWeight.toFixed(0);
-                    selectedFood.isRecipe = true; // Aggiungiamo un flag per riconoscerla dopo
-                } else {
-                    // Per un alimento normale, lasciamo la quantità vuota o a 100
-                    quantityInput.value = '100';
-                }
-
-                document.getElementById('search-results').style.display = 'none';
-                quantityInput.focus();
-                updateMealPreview(); // Aggiorna l'anteprima quando un cibo viene selezionato
-            }
-        }
-
-        // Seleziona alimento dalla ricerca nel database
-        const lookupItem = target.closest('.lookup-item');
-        if (lookupItem) {
-            const food = currentLookupResults.find(f => f.id === lookupItem.dataset.foodId);
-            if (food) {
-                document.getElementById('food-lookup-search').value = food.name;
-                showFoodLookupDetails(food);
-                document.getElementById('food-lookup-results-list').style.display = 'none';
-            }
         }
 
         // Seleziona ingrediente dalla ricerca ricetta
@@ -972,8 +932,41 @@ async function fetchFoodFromBarcode(barcode, callback) {
         }
         
         const { product_name, nutriments } = data.product;
-        const foodData = { name: product_name || 'Nome non disponibile', calories: nutriments['energy-kcal_100g'] || (nutriments.energy_100g / 4.184) || 0, proteins: nutriments.proteins_100g || 0, carbs: nutriments.carbohydrates_100g || 0, fats: nutriments.fat_100g || 0, fibers: nutriments.fiber_100g || 0 };
-        callback(foodData);
+        // Mappa per tradurre i nomi dei campi di Open Food Facts in quelli usati internamente
+        const nutrientMap = {
+            'energy-kcal_100g': 'calories',
+            'proteins_100g': 'proteins',
+            'carbohydrates_100g': 'carbs',
+            'fat_100g': 'fats',
+            'fiber_100g': 'fibers',
+            'sugars_100g': 'zuccheri_solubili_g',
+            'saturated-fat_100g': 'acidi_grassi_saturi_g', // Nota: l'unità è g, non % come in alcuni dati CREA
+            'salt_100g': 'sale_g',
+            'sodium_100g': 'sodio_mg', // Verrà convertito in mg
+            'calcium_100g': 'calcio_mg', // Verrà convertito in mg
+            'iron_100g': 'ferro_mg', // Verrà convertito in mg
+            'potassium_100g': 'potassio_mg', // Verrà convertito in mg
+            'vitamin-c_100g': 'vitamina_c_mg', // Verrà convertito in mg
+            'vitamin-a_100g': 'vitamina_a_retinolo_equivalente_mcg' // Verrà convertito in µg
+        };
+
+        const foodData = { name: product_name || 'Nome non disponibile' };
+
+        for (const [offKey, appKey] of Object.entries(nutrientMap)) {
+            let value = nutriments[offKey] || 0;
+            // Converte g in mg per sodio, calcio, ferro, potassio, vitamina C
+            if (['sodio_mg', 'calcio_mg', 'ferro_mg', 'potassio_mg', 'vitamina_c_mg'].includes(appKey)) value *= 1000;
+            // Converte UI in µg per la Vitamina A (approssimazione comune, 1 UI ≈ 0.3 µg)
+            if (appKey === 'vitamina_a_retinolo_equivalente_mcg' && offKey.endsWith('_iu')) value *= 0.3;
+            foodData[appKey] = value;
+        }
+
+        // Gestione speciale per le calorie se non presenti in kcal
+        if (!foodData.calories && nutriments.energy_100g) {
+            foodData.calories = nutriments.energy_100g / 4.184;
+        }
+
+        callback(foodData); // Chiama la funzione di callback con i dati arricchiti
     } catch (error) {
         console.error('Errore API Open Food Facts:', error);
         showToast(error.message, true);
@@ -1926,62 +1919,76 @@ function resetRecipeForm() {
 
 // --- Funzioni di ricerca ---
 
-/**
- * Funzione generica per la ricerca di alimenti nel database Firestore.
- * @param {string} searchTerm - Il termine da cercare (in minuscolo).
- * @param {HTMLElement} resultsContainer - L'elemento contenitore per i risultati.
- * @param {function(object): string} itemRenderer - Una funzione che prende un oggetto 'food' e restituisce una stringa HTML per quell'elemento.
- * @returns {Promise<Array>} Una promise che si risolve con l'array dei risultati.
- */
-async function handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer) {
-    if (searchTerm.length < 2) {
-        resultsContainer.style.display = 'none';
-        return [];
-    }
+function setupSearchHandler({ inputElement, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
+    let currentResults = [];
 
-    try {
-        const q = query(
-            collection(db, 'foods'),
-            where('search_tokens', 'array-contains', searchTerm.split(' ')[0]),
-            // NOTA: Con 'array-contains' non è possibile ordinare per un campo diverso.
-            // I risultati verranno restituiti in base all'ordine interno di Firestore.
-            limit(20)
-        );
-        const querySnapshot = await getDocs(q);
-        const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        if (results.length > 0) {
-            resultsContainer.innerHTML = results.map(itemRenderer).join('');
+    const debouncedSearch = debounce(async (searchTerm) => {
+        if (searchTerm.length >= 2) {
+            currentResults = await searchFunction(searchTerm);
+            if (currentResults.length > 0) {
+                resultsContainer.innerHTML = currentResults.map(itemRenderer).join('');
+            } else {
+                resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun risultato.</div>`;
+            }
+            resultsContainer.style.display = 'block';
         } else {
-            resultsContainer.innerHTML = `<div class="p-4 text-slate-500">Nessun alimento trovato.</div>`;
+            resultsContainer.style.display = 'none';
+            currentResults = [];
         }
-        resultsContainer.style.display = 'block';
-        return results;
-    } catch (error) {
-        console.error("Errore ricerca alimento:", error);
-        showToast("Errore durante la ricerca.", true);
-        return [];
-    }
+    }, 300);
+
+    inputElement.addEventListener('input', (e) => {
+        debouncedSearch(e.target.value.toLowerCase());
+    });
+
+    resultsContainer.addEventListener('click', (e) => {
+        const itemElement = e.target.closest('.search-item');
+        if (itemElement) {
+            const itemId = itemElement.dataset.itemId;
+            const selectedItem = currentResults.find(item => item.id === itemId);
+            if (selectedItem) {
+                onResultClick(selectedItem);
+                resultsContainer.style.display = 'none';
+                inputElement.blur(); // Rimuove il focus dall'input
+            }
+        }
+    });
+}
+
+async function searchFoodsOnly(searchTerm) {
+    const foodsQuery = query(collection(db, 'foods'), where('name_lowercase', '>=', searchTerm), where('name_lowercase', '<=', searchTerm + '\uf8ff'), orderBy('name_lowercase'), limit(15));
+    const foodsSnapshot = await getDocs(foodsQuery);
+    return foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
 async function searchFoodsAndRecipes(searchTerm) {
     if (searchTerm.length < 2) return [];
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    // const searchTokens = searchTerm.toLowerCase().split(' ').filter(token => token.length > 1);
+    // if (searchTokens.length === 0) {
+    //     // Se c'è solo una parola corta, usala comunque
+    //     const singleToken = searchTerm.toLowerCase().trim();
+    //     if (singleToken) searchTokens.push(singleToken);
+    //     else return [];
+    // }
 
     try {
         // Promise per la ricerca di alimenti
+        // Cerca nel database usando solo il primo termine (più efficiente per Firestore)
         const foodsQuery = query(
             collection(db, 'foods'),
-            where('search_tokens', 'array-contains', searchTerm.split(' ')[0]),
+            where('name_lowercase', '>=', lowerCaseSearchTerm),
+            where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
+            orderBy('name_lowercase'),
             limit(15)
         );
         const foodsPromise = getDocs(foodsQuery);
 
         // Promise per la ricerca di ricette
-        // La ricerca per ricette rimane invariata (prefix search)
         const recipesQuery = query(
             collection(db, `users/${userId}/recipes`),
-            where('name_lowercase', '>=', searchTerm),
-            where('name_lowercase', '<=', searchTerm + '\uf8ff'),
+            where('name_lowercase', '>=', lowerCaseSearchTerm),
+            where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
             orderBy('name_lowercase'),
             limit(10)
         );
@@ -1989,8 +1996,8 @@ async function searchFoodsAndRecipes(searchTerm) {
 
         // Esegui entrambe le ricerche in parallelo
         const [foodsSnapshot, recipesSnapshot] = await Promise.all([foodsPromise, recipesPromise]);
+        const foodResults = foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isRecipe: false }));
 
-        const foodResults = foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const recipeResults = recipesSnapshot.docs.map(doc => ({ 
             id: doc.id, 
             ...doc.data(), 
@@ -1998,7 +2005,7 @@ async function searchFoodsAndRecipes(searchTerm) {
         }));
 
         // Combina e ordina i risultati (opzionale, ma può essere utile)
-        return [...recipeResults, ...foodResults];
+        return [...recipeResults, ...foodResults].slice(0, 20); // Limita il numero totale di risultati mostrati
     } catch (error) {
         console.error("Errore nella ricerca unificata:", error);
         showToast("Errore durante la ricerca.", true);
