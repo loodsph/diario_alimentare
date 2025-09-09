@@ -1940,12 +1940,12 @@ async function handleGenericFoodSearch(searchTerm, resultsContainer, itemRendere
     }
 
     try {
-        const q = query( // FIX: Modificata la query per usare 'array-contains'
+        const q = query(
             collection(db, 'foods'),
-            where('search_tokens', 'array-contains', searchTerm),
+            where('search_tokens', 'array-contains', searchTerm.split(' ')[0]),
             // NOTA: Con 'array-contains' non è possibile ordinare per un campo diverso.
             // I risultati verranno restituiti in base all'ordine interno di Firestore.
-            limit(20) // Aumentiamo leggermente il limite per avere più scelta
+            limit(20)
         );
         const querySnapshot = await getDocs(q);
         const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -1969,10 +1969,10 @@ async function searchFoodsAndRecipes(searchTerm) {
 
     try {
         // Promise per la ricerca di alimenti
-        const foodsQuery = query( // FIX: Modificata la query per usare 'array-contains'
+        const foodsQuery = query(
             collection(db, 'foods'),
-            where('search_tokens', 'array-contains', searchTerm),
-            limit(10)
+            where('search_tokens', 'array-contains', searchTerm.split(' ')[0]),
+            limit(15)
         );
         const foodsPromise = getDocs(foodsQuery);
 
