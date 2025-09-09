@@ -732,6 +732,7 @@ async function saveMealChanges() {
     const newQuantity = parseFloat(document.getElementById('edit-meal-quantity').value);
     const newType = document.getElementById('edit-meal-type').value;
 
+    const newName = document.getElementById('edit-meal-name-input').value.trim();
     if (isNaN(newQuantity) || newQuantity <= 0) {
         return showToast('Inserisci una quantità valida.', true);
     }
@@ -741,6 +742,7 @@ async function saveMealChanges() {
 
     try {
         await updateDoc(mealRef, {
+            name: newName,
             quantity: newQuantity,
             type: newType,
             date: Timestamp.fromDate(newDate)
@@ -787,9 +789,16 @@ async function addNewFood() {
             }
         }
 
+        // Genera i token per la ricerca
+        const search_tokens = name.toLowerCase()
+                                  .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"") // Rimuove la punteggiatura
+                                  .split(' ')
+                                  .filter(token => token.length > 0); // Rimuove eventuali token vuoti
+
         await addDoc(foodsCollectionRef, {
             name, calories, proteins, carbs, fats, fibers,
-            name_lowercase: name.toLowerCase()
+            name_lowercase: name.toLowerCase(),
+            search_tokens // Aggiunge i token al nuovo documento
         });
         showToast(`${name} aggiunto al database!`);
         resetNewFoodForm();
@@ -1725,12 +1734,12 @@ function openEditMealModal(mealId) {
 
     mealToEditId = mealId;
 
-    document.getElementById('edit-meal-name').textContent = meal.name;
+    document.getElementById('edit-meal-name-input').value = meal.name;
     document.getElementById('edit-meal-quantity').value = meal.quantity;
     document.getElementById('edit-meal-type').value = meal.type;
 
     document.getElementById('edit-meal-modal').classList.remove('hidden');
-    document.getElementById('edit-meal-quantity').focus();
+    document.getElementById('edit-meal-name-input').focus();
 }
 
 function openGoalsModal() {
@@ -1931,12 +1940,12 @@ async function handleGenericFoodSearch(searchTerm, resultsContainer, itemRendere
     }
 
     try {
-        const q = query(
+        const q = query( // FIX: Modificata la query per usare 'array-contains'
             collection(db, 'foods'),
-            where('name_lowercase', '>=', searchTerm),
-            where('name_lowercase', '<=', searchTerm + '\uf8ff'),
-            orderBy('name_lowercase'),
-            limit(10)
+            where('search_tokens', 'array-contains', searchTerm),
+            // NOTA: Con 'array-contains' non è possibile ordinare per un campo diverso.
+            // I risultati verranno restituiti in base all'ordine interno di Firestore.
+            limit(20) // Aumentiamo leggermente il limite per avere più scelta
         );
         const querySnapshot = await getDocs(q);
         const results = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -1960,22 +1969,21 @@ async function searchFoodsAndRecipes(searchTerm) {
 
     try {
         // Promise per la ricerca di alimenti
-        const foodsQuery = query(
+        const foodsQuery = query( // FIX: Modificata la query per usare 'array-contains'
             collection(db, 'foods'),
-            where('name_lowercase', '>=', searchTerm),
-            where('name_lowercase', '<=', searchTerm + '\uf8ff'),
-            orderBy('name_lowercase'),
-            limit(5)
+            where('search_tokens', 'array-contains', searchTerm),
+            limit(10)
         );
         const foodsPromise = getDocs(foodsQuery);
 
         // Promise per la ricerca di ricette
+        // La ricerca per ricette rimane invariata (prefix search)
         const recipesQuery = query(
             collection(db, `users/${userId}/recipes`),
             where('name_lowercase', '>=', searchTerm),
             where('name_lowercase', '<=', searchTerm + '\uf8ff'),
             orderBy('name_lowercase'),
-            limit(5)
+            limit(10)
         );
         const recipesPromise = getDocs(recipesQuery);
 
