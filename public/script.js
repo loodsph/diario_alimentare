@@ -1623,23 +1623,40 @@ function showFoodLookupDetails(food) {
 }
 
 async function setWaterCount(newCount) {
-    if (newCount < 0 || isNaN(newCount)) return;
+    const finalCount = Math.max(0, newCount);
+    if (isNaN(finalCount)) return;
 
+    // Aggiornamento ottimistico: aggiorna subito l'UI
+    waterCount = finalCount;
+    renderWaterTracker();
+
+    // Poi salva su Firestore in background
     if (!userId || !isOnline) {
         if (!isOnline) showToast("Sei offline. Il conteggio non verrà salvato.", true);
         return;
     }
     const dateString = selectedDate.toISOString().split('T')[0];
     const waterDocRef = doc(db, `users/${userId}/water`, dateString);
+
     try {
-        await setDoc(waterDocRef, { count: newCount }, { merge: true });
+        await setDoc(waterDocRef, { count: finalCount }, { merge: true });
     } catch (error) {
         console.error("Errore salvataggio acqua (setWaterCount):", error);
         showToast("Errore nel salvare il conteggio dell'acqua.", true);
+        // Se il salvataggio fallisce, potremmo voler ripristinare il valore precedente,
+        // ma per ora il listener onSnapshot dovrebbe gestire la coerenza.
     }
 }
 
 async function incrementWaterCount(amount) {
+    const newCount = waterCount + amount;
+    const finalCount = Math.max(0, newCount);
+
+    // Aggiornamento ottimistico: aggiorna subito l'UI
+    waterCount = finalCount;
+    renderWaterTracker();
+
+    // Poi salva su Firestore in background
     if (!userId || !isOnline) {
         if (!isOnline) showToast("Sei offline. Il conteggio non verrà salvato.", true);
         return;
@@ -1647,21 +1664,10 @@ async function incrementWaterCount(amount) {
 
     const dateString = selectedDate.toISOString().split('T')[0];
     const waterDocRef = doc(db, `users/${userId}/water`, dateString);
-    
-    try {
-        await runTransaction(db, async (transaction) => {
-            const waterDoc = await transaction.get(waterDocRef);
-            const currentCount = waterDoc.data()?.count || 0;
-            const newCount = currentCount + amount;
-            const finalCount = Math.max(0, newCount);
-
-            // Impedisce al conteggio di scendere sotto lo zero.
-            transaction.set(waterDocRef, { count: finalCount }, { merge: true });
-        });
-    } catch (e) {
-        console.error("Transazione acqua fallita: ", e);
+    setDoc(waterDocRef, { count: finalCount }, { merge: true }).catch(e => {
+        console.error("Salvataggio acqua fallito: ", e);
         showToast("Errore nell'aggiornare il conteggio dell'acqua.", true);
-    }
+    });
 }
 
 function listenToWaterData() {
