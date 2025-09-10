@@ -58,6 +58,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (user) {
             isAppInitialized = false; // Resetta il flag ad ogni login
             try {
+                loginScreen.classList.add('hidden');
                 // Resetta la data a oggi (UTC) ad ogni login/refresh per coerenza.
                 selectedDate = getTodayUTC();
 
@@ -101,9 +102,10 @@ window.addEventListener('DOMContentLoaded', () => {
         } else {
             isAppInitialized = false;
             userId = null;
+            loginScreen.classList.remove('hidden');
+            loginScreen.classList.add('flex'); // Aggiungi 'flex' per renderlo visibile correttamente
             updateUserUI(null);
             appContainer.classList.add('hidden');
-            loginScreen.classList.remove('hidden');
             loadingOverlay.classList.add('hidden');
             if (waterUnsubscribe) waterUnsubscribe();
             if (waterHistoryUnsubscribe) waterHistoryUnsubscribe();
@@ -230,8 +232,8 @@ function setupListeners() {
         },
         itemRenderer: (item) => `
             <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
-                <div class="font-medium text-slate-200">${food.name}</div>
-                <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
+                <div class="font-medium text-slate-200">${item.name}</div>
+                <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
             </div>
         `
     });
@@ -991,8 +993,10 @@ function updateUserUI(user) {
         document.getElementById('user-name').textContent = user.displayName || 'Utente';
         document.getElementById('user-email').textContent = user.email;
         topBar.classList.remove('hidden');
+        topBar.classList.add('flex');
     } else {
         topBar.classList.add('hidden');
+        topBar.classList.remove('flex');
     }
 }
 
@@ -1738,17 +1742,20 @@ function openEditMealModal(mealId) {
     document.getElementById('edit-meal-type').value = meal.type;
 
     document.getElementById('edit-meal-modal').classList.remove('hidden');
+    document.getElementById('edit-meal-modal').classList.add('flex');
     document.getElementById('edit-meal-name-input').focus();
 }
 
 function openGoalsModal() {
     updateCalculatedCalories(); // Calcola subito all'apertura
     document.getElementById('goals-modal').classList.remove('hidden');
+    document.getElementById('goals-modal').classList.add('flex');
     document.getElementById('goal-proteins').focus(); // Focus sul primo campo modificabile
 }
 
 function closeGoalsModal() {
     document.getElementById('goals-modal').classList.add('hidden');
+    document.getElementById('goals-modal').classList.remove('flex');
     updateGoalsInputs(); // Ripristina i valori se si annulla
 }
 
@@ -1827,10 +1834,12 @@ function showConfirmationModal(message, onConfirm) {
     document.getElementById('confirmation-message').textContent = message;
     onConfirmAction = onConfirm;
     document.getElementById('confirmation-modal').classList.remove('hidden');
+    document.getElementById('confirmation-modal').classList.add('flex');
 }
 
 function hideConfirmationModal() {
     document.getElementById('confirmation-modal').classList.add('hidden');
+    document.getElementById('confirmation-modal').classList.remove('flex');
     onConfirmAction = null;
 }
 
@@ -2109,6 +2118,7 @@ async function startScanner(onDecode) {
     const feedbackEl = document.getElementById('scanner-feedback');
     const cameraSelect = document.getElementById('camera-select');
     scannerModal.classList.remove('hidden');
+    scannerModal.classList.add('flex');
     feedbackEl.textContent = 'Avvio fotocamera...';
 
     try {
@@ -2293,6 +2303,7 @@ function playScanSuccessAnimation(elementId) {
 async function stopScanner() {
     const scannerModal = document.getElementById('scanner-modal');
     scannerModal.classList.add('hidden');
+    scannerModal.classList.remove('flex');
 
     if (html5QrCode && html5QrCode.isScanning) {
         try {
