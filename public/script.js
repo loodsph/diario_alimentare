@@ -15,6 +15,7 @@ let selectedDate = getTodayUTC();
 let allMeals = [];
 let dailyMealsCache = {}; // Cache per i pasti giornalieri raggruppati e ordinati
 let dailyTotalsCache = {}; // Cache per i totali nutrizionali giornalieri
+let foods = []; // Cache per tutti gli alimenti del database
 let recipes = [];
 let currentRecipeIngredientResults = [];
 let mealToEditId = null; // ID del pasto attualmente in modifica
@@ -201,7 +202,7 @@ function setupListeners() {
                 const servingWeight = item.totalWeight / item.servings;
                 quantityInput.value = servingWeight.toFixed(0);
             } else {
-                quantityInput.value = '100';
+                quantityInput.value = 100;
             }
             quantityInput.focus();
             updateMealPreview();
@@ -506,8 +507,8 @@ function toggleCustomMealForm() {
         customContainer.classList.add('active');
         customContainer.classList.remove('hidden');
         toggleText.textContent = 'Cerca alimento';
-        quantityInput.value = 1;
-        quantityInput.disabled = true;
+        quantityInput.value = 100; // Imposta un valore di default
+        quantityInput.disabled = false;
         selectedFood = null; // Deseleziona qualsiasi alimento
         document.getElementById('food-search').value = '';
         document.getElementById('search-results').style.display = 'none';
@@ -533,15 +534,18 @@ async function loadInitialData() {
         // 1. Carica tutti i dati necessari in parallelo per velocizzare l'avvio.
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const foodsQuery = query(collection(db, 'foods'), orderBy('name_lowercase'));
         const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
         const recipesQuery = collection(db, `users/${userId}/recipes`);
 
-        const [mealsSnapshot, recipesSnapshot, _] = await Promise.all([
+        const [foodsSnapshot, mealsSnapshot, recipesSnapshot, _] = await Promise.all([
+            getDocs(foodsQuery),
             getDocs(mealsQuery),
             getDocs(recipesQuery),
             loadNutritionGoals() // Carica gli obiettivi in parallelo
         ]);
 
+        foods = foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         allMeals = mealsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
         recipes = recipesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
@@ -660,15 +664,15 @@ async function addMeal() {
             return showToast('Compila tutti i campi del pasto personalizzato.', true);
         }
 
-        // Per un pasto personalizzato, i valori sono già totali, quindi la quantità è 1 e i valori per 100g sono gli stessi.
+        // I valori inseriti sono per 100g, la quantità è il moltiplicatore.
         mealData = {
             name,
             calories,
             proteins,
             carbs,
             fats,
-            fibers: 0, // Non abbiamo un campo per le fibre nel form personalizzato
-            quantity: 1, // La quantità è sempre 1 per un pasto personalizzato
+            fibers: 0,
+            quantity: quantity,
             type: mealType,
             isCustom: true // Aggiungiamo un flag per identificarlo
         };
@@ -689,30 +693,31 @@ async function addMeal() {
         if (!selectedFood || isNaN(quantity) || quantity <= 0) {
             return showToast('Seleziona un alimento e inserisci una quantità valida.', true);
         }
+
+        // Se l'alimento selezionato è una ricetta, gestiscila in modo specifico
+        if (selectedFood.isRecipe) {
+            const { totalNutrition, totalWeight, servings, name } = selectedFood;
+            const nutritionPer100g = {
+                calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
+                proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
+                carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
+                fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
+                fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
+            };
+            
+            // Sovrascrivi selectedFood con i dati per 100g, così il resto della funzione non cambia
+            selectedFood = {
+                ...nutritionPer100g,
+                name: `${name} (1 porzione)`,
+                recipeId: selectedFood.id
+            };
+        }
+
         mealData = { ...selectedFood, quantity, type: mealType, isCustom: false };
     }
 
     if (!mealData) {
         return showToast("Dati del pasto non validi.", true);
-    }
-
-    // Se l'alimento selezionato è una ricetta, gestiscila in modo specifico
-    if (selectedFood.isRecipe) {
-        const { totalNutrition, totalWeight, servings, name } = selectedFood;
-        const nutritionPer100g = {
-            calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
-            proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
-            carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
-            fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
-            fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
-        };
-        
-        // Sovrascrivi selectedFood con i dati per 100g, così il resto della funzione non cambia
-        selectedFood = {
-            ...nutritionPer100g,
-            name: `${name} (1 porzione)`,
-            recipeId: selectedFood.id
-        };
     }
 
     const addBtn = document.getElementById('add-meal-btn');
