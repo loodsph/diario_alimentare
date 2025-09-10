@@ -108,19 +108,43 @@
                 </h2>
                 
                 <div class="space-y-6">
-                    <div>
-                        <label for="food-search" class="block text-sm font-semibold text-slate-300 mb-3">Cerca Alimento o Scansiona</label>
-                        <div id="food-search-wrapper" class="relative">
-                            <input type="text" id="food-search" class="search-input input-with-icon w-full pr-20" placeholder="Cerca un alimento..." autocomplete="off">
-                            <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
-                                <i id="food-search-icon" class="fas fa-search text-slate-400 transition-opacity duration-300"></i>
+                    <div class="flex justify-between items-center">
+                        <label for="food-search" class="block text-sm font-semibold text-slate-300">Cerca Alimento o Scansiona</label>
+                        <button id="toggle-custom-meal-btn" class="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2">
+                            <i class="fas fa-pen-alt"></i>
+                            <span id="toggle-custom-meal-text">Crea pasto personalizzato</span>
+                        </button>
+                    </div>
+                    <div id="meal-entry-container" class="relative">
+                        <div id="food-search-container" class="meal-form-section active">
+                            <div id="food-search-wrapper" class="relative">
+                                <input type="text" id="food-search" class="search-input input-with-icon w-full pr-20" placeholder="Cerca un alimento..." autocomplete="off">
+                                <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
+                                    <i id="food-search-icon" class="fas fa-search text-slate-400 transition-opacity duration-300"></i>
+                                </div>
+                                <div class="absolute inset-y-0 right-0 flex items-center pr-3 ">
+                                    <button id="scan-barcode-btn" type="button" class="btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre">
+                                        <i class="fas fa-barcode"></i>
+                                    </button>
+                                </div>
+                                <div id="search-suggestions-container" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden">
+                                    <div id="search-suggestions"></div>
+                                    <div id="search-results"></div>
+                                </div>
                             </div>
-                            <div class="absolute inset-y-0 right-0 flex items-center pr-3 ">
-                                <button id="scan-barcode-btn" type="button" class="btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre">
-                                    <i class="fas fa-barcode"></i>
-                                </button>
+                        </div>
+                        <div id="custom-meal-container" class="meal-form-section space-y-4 hidden">
+                            <input type="text" id="custom-meal-name" class="input-modern w-full" placeholder="Nome pasto personalizzato">
+                            <div class="grid grid-cols-2 gap-4">
+                                <input type="number" id="custom-meal-calories" class="input-modern w-full" placeholder="Calorie totali">
+                                <input type="number" id="custom-meal-proteins" class="input-modern w-full" placeholder="Proteine (g)">
+                                <input type="number" id="custom-meal-carbs" class="input-modern w-full" placeholder="Carboidrati (g)">
+                                <input type="number" id="custom-meal-fats" class="input-modern w-full" placeholder="Grassi (g)">
                             </div>
-                            <div id="search-results" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden"></div>
+                            <div class="flex items-center pt-2">
+                                <input id="save-custom-meal-as-food" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-700 text-indigo-500 focus:ring-indigo-600 focus:ring-offset-slate-800">
+                                <label for="save-custom-meal-as-food" class="ml-3 block text-sm font-medium text-slate-300">Salva come nuovo alimento nel database</label>
+                            </div>
                         </div>
                     </div>
                     
@@ -493,8 +517,9 @@
                 <div id="new-food-content" class="section-content">
                     <div class="section-content-inner">
                         <div class="glass-card p-8 rounded-3xl">
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start" id="new-food-form-grid">
                                 <div class="lg:col-span-3 relative">
+                                     <label for="new-food-name" class="input-label">Nome Alimento</label>
                                      <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-20" aria-label="Nome alimento">
                                      <div class="absolute inset-y-0 right-0 flex items-center pr-3">
                                         <button id="scan-barcode-for-new-food-btn" type="button" class="btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
@@ -502,11 +527,26 @@
                                         </button>
                                      </div>
                                 </div>
-                                <input type="number" id="new-food-calories" class="input-modern" placeholder="Calorie (per 100g)">
-                                <input type="number" id="new-food-proteins" class="input-modern" placeholder="Proteine (g)">
-                                <input type="number" id="new-food-carbs" class="input-modern" placeholder="Carboidrati (g)">
-                                <input type="number" id="new-food-fats" class="input-modern" placeholder="Grassi (g)">
-                                <input type="number" id="new-food-fibers" class="input-modern" placeholder="Fibre (g)">
+                                <div>
+                                    <label for="new-food-calories" class="input-label">Calorie (per 100g)</label>
+                                    <input type="number" id="new-food-calories" class="input-modern w-full" placeholder="Calorie (per 100g)">
+                                </div>
+                                <div>
+                                    <label for="new-food-proteins" class="input-label">Proteine (g)</label>
+                                    <input type="number" id="new-food-proteins" class="input-modern w-full" placeholder="Proteine (g)">
+                                </div>
+                                <div>
+                                    <label for="new-food-carbs" class="input-label">Carboidrati (g)</label>
+                                    <input type="number" id="new-food-carbs" class="input-modern w-full" placeholder="Carboidrati (g)">
+                                </div>
+                                <div>
+                                    <label for="new-food-fats" class="input-label">Grassi (g)</label>
+                                    <input type="number" id="new-food-fats" class="input-modern w-full" placeholder="Grassi (g)">
+                                </div>
+                                <div>
+                                    <label for="new-food-fibers" class="input-label">Fibre (g)</label>
+                                    <input type="number" id="new-food-fibers" class="input-modern w-full" placeholder="Fibre (g)">
+                                </div>
                                 <button id="add-food-btn" class="btn-modern btn-success lg:col-span-3 w-full">
                                     <i class="fas fa-plus-circle mr-2"></i>
                                     Aggiungi Alimento
@@ -542,6 +582,9 @@
                                 <ul id="lookup-food-details-list" class="space-y-3 text-slate-300 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
                                     <!-- I dettagli nutrizionali verranno inseriti qui da JavaScript -->
                                 </ul>
+                                <div class="mt-6 flex justify-end">
+                                    <button id="edit-lookup-food-btn" class="btn-modern btn-primary hidden">Modifica Alimento</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -661,14 +704,22 @@
     <div id="edit-meal-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="edit-meal-title">
         <div class="modal-content p-8 max-w-md w-full mx-4">
             <h3 id="edit-meal-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Pasto</h3>
-            <div class="space-y-6">
+            <div id="edit-meal-form-container" class="space-y-6">
                 <div>
                     <label for="edit-meal-name-input" class="block text-sm font-semibold text-slate-300 mb-3">Nome Alimento</label>
                     <input type="text" id="edit-meal-name-input" class="input-modern w-full">
                 </div>
-                <div>
+                <div id="edit-standard-meal-fields">
                     <label for="edit-meal-quantity" class="block text-sm font-semibold text-slate-300 mb-3">Quantità (g)</label>
                     <input type="number" id="edit-meal-quantity" class="input-modern w-full" placeholder="100">
+                </div>
+                <div id="edit-custom-meal-fields" class="hidden space-y-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <input type="number" id="edit-meal-calories" class="input-modern w-full" placeholder="Calorie totali">
+                        <input type="number" id="edit-meal-proteins" class="input-modern w-full" placeholder="Proteine (g)">
+                        <input type="number" id="edit-meal-carbs" class="input-modern w-full" placeholder="Carboidrati (g)">
+                        <input type="number" id="edit-meal-fats" class="input-modern w-full" placeholder="Grassi (g)">
+                    </div>
                 </div>
                 <div>
                     <label for="edit-meal-type" class="block text-sm font-semibold text-slate-300 mb-3">Tipo Pasto</label>
@@ -683,6 +734,44 @@
             <div class="flex gap-4 mt-8">
                 <button id="cancel-edit-meal-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
                 <button id="save-edit-meal-btn" class="btn-modern btn-primary flex-1">Salva Modifiche</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="edit-food-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="edit-food-title">
+        <div class="modal-content p-8 max-w-md w-full mx-4">
+            <h3 id="edit-food-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Alimento</h3>
+            <div id="edit-food-form-container" class="space-y-4">
+                <div>
+                    <label for="edit-food-name" class="input-label">Nome Alimento</label>
+                    <input type="text" id="edit-food-name" class="input-modern w-full">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label for="edit-food-calories" class="input-label">Calorie (per 100g)</label>
+                        <input type="number" id="edit-food-calories" class="input-modern w-full">
+                    </div>
+                    <div>
+                        <label for="edit-food-proteins" class="input-label">Proteine (g)</label>
+                        <input type="number" id="edit-food-proteins" class="input-modern w-full">
+                    </div>
+                    <div>
+                        <label for="edit-food-carbs" class="input-label">Carboidrati (g)</label>
+                        <input type="number" id="edit-food-carbs" class="input-modern w-full">
+                    </div>
+                    <div>
+                        <label for="edit-food-fats" class="input-label">Grassi (g)</label>
+                        <input type="number" id="edit-food-fats" class="input-modern w-full">
+                    </div>
+                     <div>
+                        <label for="edit-food-fibers" class="input-label">Fibre (g)</label>
+                        <input type="number" id="edit-food-fibers" class="input-modern w-full">
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-8">
+                <button id="cancel-edit-food-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
+                <button id="save-edit-food-btn" class="btn-modern btn-primary flex-1">Salva Modifiche</button>
             </div>
         </div>
     </div>
