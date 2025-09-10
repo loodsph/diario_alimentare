@@ -168,6 +168,11 @@ body {
     color: #64748b;
 }
 
+.input-with-icon {
+    @apply pl-12; /* Aumenta il padding per fare spazio all'icona */
+}
+
+
 /* Stat cards with animations */
 .stat-card {
     background: var(--primary-gradient);

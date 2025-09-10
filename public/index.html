@@ -111,11 +111,15 @@
                     <div>
                         <label for="food-search" class="block text-sm font-semibold text-slate-300 mb-3">Cerca Alimento o Scansiona</label>
                         <div id="food-search-wrapper" class="relative">
-                            <input type="text" id="food-search" class="search-input w-full pl-12 pr-16" placeholder="Cerca un alimento..." autocomplete="off">
-                            <i id="food-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none transition-opacity duration-300"></i>
-                            <button id="scan-barcode-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre">
-                                <i class="fas fa-barcode"></i>
-                            </button>
+                            <input type="text" id="food-search" class="search-input input-with-icon w-full pr-20" placeholder="Cerca un alimento..." autocomplete="off">
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
+                                <i id="food-search-icon" class="fas fa-search text-slate-400 transition-opacity duration-300"></i>
+                            </div>
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-3 ">
+                                <button id="scan-barcode-btn" type="button" class="btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre">
+                                    <i class="fas fa-barcode"></i>
+                                </button>
+                            </div>
                             <div id="search-results" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden"></div>
                         </div>
                     </div>
@@ -491,10 +495,12 @@
                         <div class="glass-card p-8 rounded-3xl">
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
                                 <div class="lg:col-span-3 relative">
-                                     <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-16" aria-label="Nome alimento">
-                                     <button id="scan-barcode-for-new-food-btn" type="button" class="absolute right-3 top-1/2 transform -translate-y-1/2 btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
-                                        <i class="fas fa-barcode"></i>
-                                    </button>
+                                     <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-20" aria-label="Nome alimento">
+                                     <div class="absolute inset-y-0 right-0 flex items-center pr-3">
+                                        <button id="scan-barcode-for-new-food-btn" type="button" class="btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
+                                            <i class="fas fa-barcode"></i>
+                                        </button>
+                                     </div>
                                 </div>
                                 <input type="number" id="new-food-calories" class="input-modern" placeholder="Calorie (per 100g)">
                                 <input type="number" id="new-food-proteins" class="input-modern" placeholder="Proteine (g)">
@@ -525,8 +531,10 @@
                     <div class="section-content-inner">
                         <div class="glass-card p-8 rounded-3xl min-h-96">
                             <div id="food-lookup-wrapper" class="relative mb-4">
-                                <i id="food-lookup-search-icon" class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 transition-opacity duration-300" aria-hidden="true"></i>
-                                <input type="text" id="food-lookup-search" class="search-input w-full pl-12" placeholder="Cerca un alimento per vederne i dettagli..." aria-label="Cerca alimento nel database" autocomplete="off">
+                                <input type="text" id="food-lookup-search" class="search-input input-with-icon w-full" placeholder="Cerca un alimento per vederne i dettagli..." aria-label="Cerca alimento nel database" autocomplete="off">
+                                <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
+                                    <i id="food-lookup-search-icon" class="fas fa-search text-slate-400" aria-hidden="true"></i>
+                                </div>
                                 <div id="food-lookup-results-list" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden" role="listbox" aria-label="Risultati ricerca alimento"></div>
                             </div>
                             <div id="food-lookup-details" class="mt-6 p-6 bg-slate-800 rounded-xl hidden">
