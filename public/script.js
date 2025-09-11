@@ -191,7 +191,6 @@ function setupListeners() {
     // Gestore per la ricerca principale (Aggiungi Pasto)
     setupSearchHandler({
         inputElement: foodSearchInput,
-        suggestionsContainer: document.getElementById('search-suggestions'),
         resultsContainer: document.getElementById('search-results'),
         searchFunction: searchFoodsAndRecipes,
         onResultClick: (item) => {
@@ -210,20 +209,22 @@ function setupListeners() {
         itemRenderer: (item) => {
             if (item.isRecipe) {
                 const servingWeight = (item.totalWeight / item.servings).toFixed(0);
-                const recentIcon = item.isRecent ? '<i class="fas fa-history text-indigo-400 mr-2" title="Usato di recente"></i>' : '';
                 return `
                 <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
-                    ${recentIcon}<i class="fas fa-book text-orange-400 mr-2"></i>
+                    <i class="fas fa-book text-orange-400 mr-3"></i>
                     <div>
                         <div class="font-medium text-slate-200">${item.name}</div>
-                    <div class="text-sm text-slate-400">Ricetta - 1 porzione (~${servingWeight}g)</div>
+                        <div class="text-sm text-slate-400">Ricetta - 1 porzione (~${servingWeight}g)</div>
                     </div>
                 </div>`;
             }
             return `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
-                <div class="font-medium text-slate-200">${item.name}</div>
-                <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
+                <i class="fas fa-utensils text-indigo-400 mr-3"></i>
+                <div>
+                    <div class="font-medium text-slate-200">${item.name}</div>
+                    <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
+                </div>
             </div>`;
         }
     });
@@ -238,18 +239,20 @@ function setupListeners() {
     const foodLookupInput = document.getElementById('food-lookup-search');
     // Gestore per la ricerca nel database
     setupSearchHandler({
-        inputElement: foodLookupInput, 
-        suggestionsContainer: null, // Nessun suggerimento per questa ricerca
+        inputElement: foodLookupInput,
         resultsContainer: document.getElementById('food-lookup-results-list'),
         searchFunction: searchFoodsOnly,
         onResultClick: (item) => {
             foodLookupInput.value = item.name;
             showFoodLookupDetails(item);
         },
-        itemRenderer: (item) => `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer" data-item-id="${item.id}">
-                <div class="font-medium text-slate-200">${item.name}</div>
-                <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
+        itemRenderer: (item) => ` 
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
+                <i class="fas fa-utensils text-indigo-400 mr-3"></i>
+                <div>
+                    <div class="font-medium text-slate-200">${item.name}</div>
+                    <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
+                </div>
             </div>
         `
     });
@@ -271,9 +274,9 @@ function setupListeners() {
         const target = e.target;
 
         // Nascondi i risultati della ricerca se si clicca fuori
-        const suggestionsContainer = document.getElementById('search-suggestions-container');
-        if (suggestionsContainer.style.display === 'block' && !target.closest('#food-search-wrapper')) {
-            suggestionsContainer.style.display = 'none';
+        const searchResults = document.getElementById('search-results');
+        if (searchResults.style.display === 'block' && !target.closest('#food-search-wrapper')) {
+            searchResults.style.display = 'none';
         }
         const lookupResults = document.getElementById('food-lookup-results-list'); 
         if (lookupResults.style.display === 'block' && !target.closest('#food-lookup-wrapper')) { 
@@ -2178,79 +2181,17 @@ function resetRecipeForm() {
 
 // --- Funzioni di ricerca ---
 
-function getRecentFoods(limit = 5) {
-    const recentUniqueFoods = [];
-    const seenNames = new Set();
-
-    // allMeals è già ordinato per data decrescente
-    for (const meal of allMeals) {
-        if (recentUniqueFoods.length >= limit) break;
-
-        if (!seenNames.has(meal.name)) {
-            seenNames.add(meal.name);
-            
-            // Cerca l'alimento completo nel database o in una ricetta
-            let foodDetails = recipes.find(r => r.id === meal.recipeId) || foods.find(f => f.name === meal.name);
-
-            if (foodDetails) {
-                recentUniqueFoods.push({ ...foodDetails, isRecent: true, isRecipe: !!meal.recipeId });
-            } else if (meal.isCustom) {
-                // Se è un pasto personalizzato non salvato, crea un oggetto al volo
-                recentUniqueFoods.push({
-                    id: meal.id,
-                    name: meal.name,
-                    calories: meal.calories,
-                    proteins: meal.proteins,
-                    carbs: meal.carbs,
-                    fats: meal.fats,
-                    fibers: meal.fibers || 0,
-                    isRecent: true,
-                    isCustom: true
-                });
-            }
-        }
-    }
-    return recentUniqueFoods;
-}
-
-function setupSearchHandler({ inputElement, suggestionsContainer, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
+function setupSearchHandler({ inputElement, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
     let currentResults = [];
-    const mainContainer = suggestionsContainer ? suggestionsContainer.parentElement : resultsContainer;
-
-    inputElement.addEventListener('focus', () => {
-        if (inputElement.value.length < 2 && suggestionsContainer) {
-            const recentFoods = getRecentFoods();
-            if (recentFoods.length > 0) {
-                suggestionsContainer.innerHTML = `<h4 class="px-4 pt-3 pb-2 text-xs font-bold text-slate-500 uppercase">Usati di recente</h4>` + recentFoods.map(itemRenderer).join('');
-                resultsContainer.innerHTML = '';
-                mainContainer.style.display = 'block';
-            }
-        }
-    });
 
     const debouncedSearch = debounce(async (searchTerm) => {
         if (searchTerm.length >= 2) {
-            const searchResults = await searchFunction(searchTerm);
-            const recentFoods = getRecentFoods().filter(f => f.name.toLowerCase().includes(searchTerm));
-            
-            // Unisci i risultati, rimuovendo duplicati (dando priorità ai recenti)
-            const combined = [...recentFoods];
-            const recentNames = new Set(recentFoods.map(f => f.name));
-            searchResults.forEach(food => {
-                if (!recentNames.has(food.name)) {
-                    combined.push(food);
-                }
-            });
-
-            currentResults = combined.slice(0, 15); // Limita i risultati totali
-            
+            currentResults = await searchFunction(searchTerm);
             resultsContainer.innerHTML = currentResults.length > 0 ? currentResults.map(itemRenderer).join('') : `<div class="p-4 text-slate-500">Nessun risultato.</div>`;
-            if (suggestionsContainer) suggestionsContainer.innerHTML = ''; // Nascondi i suggerimenti iniziali
-            mainContainer.style.display = 'block';
+            resultsContainer.style.display = 'block';
         } else {
-            mainContainer.style.display = 'none';
+            resultsContainer.style.display = 'none';
             currentResults = [];
-            if (suggestionsContainer) suggestionsContainer.innerHTML = '';
         }
     }, 300);
 
@@ -2258,14 +2199,14 @@ function setupSearchHandler({ inputElement, suggestionsContainer, resultsContain
         debouncedSearch(e.target.value.toLowerCase());
     });
 
-    mainContainer.addEventListener('click', (e) => {
+    resultsContainer.addEventListener('click', (e) => {
         const itemElement = e.target.closest('.search-item');
         if (itemElement) {
-            const itemId = itemElement.dataset.itemid; // dataset converte in minuscolo
+            const itemId = itemElement.dataset.itemId;
             const selectedItem = currentResults.find(item => item.id === itemId);
             if (selectedItem) {
                 onResultClick(selectedItem);
-                mainContainer.style.display = 'none';
+                resultsContainer.style.display = 'none';
                 inputElement.blur(); // Rimuove il focus dall'input
             }
         }
@@ -2273,35 +2214,80 @@ function setupSearchHandler({ inputElement, suggestionsContainer, resultsContain
 }
 
 async function searchFoodsOnly(searchTerm) {
-    const foodsQuery = query(collection(db, 'foods'), where('name_lowercase', '>=', searchTerm), where('name_lowercase', '<=', searchTerm + '\uf8ff'), orderBy('name_lowercase'), limit(15));
-    const foodsSnapshot = await getDocs(foodsQuery);
-    return foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+
+    // Query 1: Prefix search on the whole name
+    const prefixQuery = query(
+        collection(db, 'foods'),
+        where('name_lowercase', '>=', lowerCaseSearchTerm),
+        where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
+        limit(10)
+    );
+
+    // Query 2: Token search for words inside the name
+    const tokenQuery = query(
+        collection(db, 'foods'),
+        where('search_tokens', 'array-contains', lowerCaseSearchTerm),
+        limit(10)
+    );
+
+    try {
+        // Esegui le query su Firestore
+        const [prefixSnapshot, tokenSnapshot] = await Promise.allSettled([
+            getDocs(prefixQuery),
+            getDocs(tokenQuery)
+        ]);
+
+        const results = new Map();
+
+        // Aggiungi i risultati da Firestore
+        if (prefixSnapshot.status === 'fulfilled') {
+            prefixSnapshot.value.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false }));
+        }
+        if (tokenSnapshot.status === 'fulfilled') {
+            tokenSnapshot.value.docs.forEach(doc => {
+                if (!results.has(doc.id)) {
+                    results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false });
+                }
+            });
+        }
+
+        // Aggiungi una ricerca client-side per le sottostringhe
+        foods.forEach(food => {
+            if (!results.has(food.id) && food.name_lowercase.includes(lowerCaseSearchTerm)) {
+                results.set(food.id, { ...food, isRecipe: false });
+            }
+        });
+
+        return Array.from(results.values()).slice(0, 20); // Limita i risultati finali
+    } catch (error) {
+        console.error("Errore in searchFoodsOnly:", error);
+        showToast("Errore durante la ricerca nel database.", true);
+        return [];
+    }
 }
 
 async function searchFoodsAndRecipes(searchTerm) {
     if (searchTerm.length < 2) return [];
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    // const searchTokens = searchTerm.toLowerCase().split(' ').filter(token => token.length > 1);
-    // if (searchTokens.length === 0) {
-    //     // Se c'è solo una parola corta, usala comunque
-    //     const singleToken = searchTerm.toLowerCase().trim();
-    //     if (singleToken) searchTokens.push(singleToken);
-    //     else return [];
-    // }
 
     try {
-        // Promise per la ricerca di alimenti
-        // Cerca nel database usando solo il primo termine (più efficiente per Firestore)
-        const foodsQuery = query(
+        // Query 1: Prefix search on the whole name
+        const prefixQuery = query(
             collection(db, 'foods'),
             where('name_lowercase', '>=', lowerCaseSearchTerm),
             where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
-            orderBy('name_lowercase'),
-            limit(15)
+            limit(10)
         );
-        const foodsPromise = getDocs(foodsQuery);
 
-        // Promise per la ricerca di ricette
+        // Query 2: Token search for words inside the name
+        const tokenQuery = query(
+            collection(db, 'foods'),
+            where('search_tokens', 'array-contains', lowerCaseSearchTerm),
+            limit(10)
+        );
+        
+        // Promise per la ricerca di ricette (prefix search)
         const recipesQuery = query(
             collection(db, `users/${userId}/recipes`),
             where('name_lowercase', '>=', lowerCaseSearchTerm),
@@ -2309,20 +2295,43 @@ async function searchFoodsAndRecipes(searchTerm) {
             orderBy('name_lowercase'),
             limit(10)
         );
-        const recipesPromise = getDocs(recipesQuery);
 
-        // Esegui entrambe le ricerche in parallelo
-        const [foodsSnapshot, recipesSnapshot] = await Promise.all([foodsPromise, recipesPromise]);
-        const foodResults = foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isRecipe: false }));
+        // Esegui le query in parallelo, gestendo eventuali fallimenti
+        const [prefixSnapshot, tokenSnapshot, recipesSnapshot] = await Promise.allSettled([
+            getDocs(prefixQuery),
+            getDocs(tokenQuery),
+            getDocs(recipesQuery)
+        ]);
 
-        const recipeResults = recipesSnapshot.docs.map(doc => ({ 
-            id: doc.id, 
-            ...doc.data(), 
-            isRecipe: true // Aggiungi un flag per identificarle
-        }));
+        const results = new Map();
 
-        // Combina e ordina i risultati (opzionale, ma può essere utile)
-        return [...recipeResults, ...foodResults].slice(0, 20); // Limita il numero totale di risultati mostrati
+        // Aggiungi ricette
+        if (recipesSnapshot.status === 'fulfilled') {
+            recipesSnapshot.value.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: true }));
+        }
+
+        // Aggiungi alimenti da Firestore
+        if (prefixSnapshot.status === 'fulfilled') {
+            prefixSnapshot.value.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false }));
+        }
+        if (tokenSnapshot.status === 'fulfilled') {
+            tokenSnapshot.value.docs.forEach(doc => {
+                if (!results.has(doc.id)) results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false });
+            });
+        }
+
+        // Aggiungi ricerca client-side per alimenti e ricette
+        [...foods, ...recipes].forEach(item => {
+            if (!results.has(item.id) && item.name_lowercase.includes(lowerCaseSearchTerm)) {
+                results.set(item.id, { ...item, isRecipe: !!item.ingredients });
+            }
+        });
+
+        // Combina e ordina i risultati
+        const combinedResults = Array.from(results.values());
+        combinedResults.sort((a, b) => a.name.localeCompare(b.name));
+        
+        return combinedResults.slice(0, 20);
     } catch (error) {
         console.error("Errore nella ricerca unificata:", error);
         showToast("Errore durante la ricerca.", true);
