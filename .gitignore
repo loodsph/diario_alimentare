@@ -78,3 +78,8 @@ desktop.ini
 # Sublime Text
 *.sublime-project
 *.sublime-workspace
+
+# ===================================================================
+# Gemini-specific files
+# ===================================================================
+GEMINI.md
