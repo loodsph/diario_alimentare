@@ -28,6 +28,7 @@ let isCustomMealMode = false;
 let currentCameraIndex = 0;
 let waterCount = 0;
 let isAppInitialized = false; // Flag per controllare se l'inizializzazione è completa
+let recipeToEditId = null; // ID della ricetta in modifica
 let onConfirmAction = null; // Callback per il modale di conferma
 // let isDragging = false; // Flag per gestire il conflitto click/drag
 let waterUnsubscribe = null;
@@ -367,6 +368,14 @@ function setupListeners() {
             const recipeId = useRecipeBtn.dataset.recipeId;
             if (recipeId) useRecipe(recipeId);
         }
+        
+        // Modifica una ricetta
+        const editRecipeBtn = target.closest('.edit-recipe-btn');
+        if (editRecipeBtn) {
+            const recipeId = editRecipeBtn.dataset.recipeId;
+            if (recipeId) openRecipeEditor(recipeId);
+        }
+
 
         // Seleziona ingrediente dalla ricerca ricetta
         const recipeIngredientItem = target.closest('.recipe-ingredient-item');
@@ -880,9 +889,7 @@ async function addNewFood() {
         }
 
         // Genera i token per la ricerca
-        const search_tokens = name.toLowerCase()
-                                  .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,"") // Rimuove la punteggiatura
-                                  .split(' ')
+        const search_tokens = name.toLowerCase().split(/[\s,.;:()_/-]+/)
                                   .filter(token => token.length > 0); // Rimuove eventuali token vuoti
 
         await addDoc(foodsCollectionRef, {
@@ -917,7 +924,7 @@ async function saveFoodChanges() {
     }
 
     const foodRef = doc(db, 'foods', foodToEditId);
-    const search_tokens = name.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").split(' ').filter(token => token.length > 0);
+    const search_tokens = name.toLowerCase().split(/[\s,.;:()_/-]+/).filter(token => token.length > 0);
 
     const dataToUpdate = {
         name, calories, proteins, carbs, fats, fibers,
@@ -956,7 +963,7 @@ async function addNewFoodFromData(foodData) {
         const querySnapshot = await getDocs(q);
 
         if (querySnapshot.empty) {
-            const search_tokens = name.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").split(' ').filter(token => token.length > 0);
+            const search_tokens = name.toLowerCase().split(/[\s,.;:()_/-]+/).filter(token => token.length > 0);
             await addDoc(foodsCollectionRef, {
                 name, calories, proteins, carbs, fats, fibers: fibers || 0,
                 name_lowercase: name.toLowerCase(),
@@ -1039,7 +1046,7 @@ async function saveRecipe() {
             name, 
             name_lowercase: name.toLowerCase(),
             // Salva solo nome e quantità, l'ID non serve più dopo il calcolo
-            ingredients: ingredients.map(({ name, quantity }) => ({ name, quantity })), 
+            ingredients: ingredients.map(({ name, quantity, foodId }) => ({ name, quantity, foodId })), 
             servings,
             totalNutrition,
             totalWeight
@@ -1053,6 +1060,87 @@ async function saveRecipe() {
             showToast(error.message, true);
         } else {
             showToast("Si è verificato un errore.", true);
+        }
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalBtnHTML;
+    }
+}
+
+async function saveRecipeChanges() {
+    if (!isOnline || !recipeToEditId) return;
+
+    const name = document.getElementById('recipe-name').value.trim();
+    const servings = parseInt(document.getElementById('recipe-servings').value) || 1;
+    if (!name) return showToast('Inserisci un nome per la ricetta.', true);
+    if (servings <= 0) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
+
+    const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div'))
+        .map(el => {
+            const nameInput = el.querySelector('.recipe-ingredient-name');
+            return {
+                name: nameInput.value.trim(),
+                quantity: parseFloat(el.querySelector('.recipe-ingredient-quantity').value),
+                foodId: nameInput.dataset.foodId
+            };
+        })
+        .filter(ing => ing.name && ing.quantity > 0);
+
+    if (ingredients.length === 0) return showToast('Aggiungi almeno un ingrediente valido.', true);
+
+    const saveBtn = document.getElementById('save-recipe-btn');
+    const originalBtnHTML = saveBtn.innerHTML;
+
+    try {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Salvataggio...`;
+
+        const ingredientIds = ingredients.map(ing => ing.foodId).filter(id => id);
+        const foodDataMap = new Map();
+        if (ingredientIds.length > 0) {
+            const q = query(collection(db, 'foods'), where(documentId(), 'in', ingredientIds));
+            const snapshot = await getDocs(q);
+            snapshot.forEach(doc => foodDataMap.set(doc.id, doc.data()));
+        }
+
+        const missingIngredients = ingredients.filter(ing => !ing.foodId || !foodDataMap.has(ing.foodId));
+        if (missingIngredients.length > 0) {
+            const missingNames = missingIngredients.map(ing => ing.name).join(', ');
+            throw new Error(`Ingredienti non validi: ${missingNames}. Selezionali dalla lista per confermarli.`);
+        }
+
+        const { totalNutrition, totalWeight } = ingredients.reduce((acc, ing) => {
+            const foodData = foodDataMap.get(ing.foodId);
+            if (foodData) {
+                const ratio = ing.quantity / 100;
+                acc.totalNutrition.calories += (foodData.calories || 0) * ratio;
+                acc.totalNutrition.proteins += (foodData.proteins || 0) * ratio;
+                acc.totalNutrition.carbs += (foodData.carbs || 0) * ratio;
+                acc.totalNutrition.fats += (foodData.fats || 0) * ratio;
+                acc.totalNutrition.fibers += (foodData.fibers || 0) * ratio;
+                acc.totalWeight += ing.quantity;
+            }
+            return acc;
+        }, { totalNutrition: { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 }, totalWeight: 0 });
+
+        const recipeRef = doc(db, `users/${userId}/recipes`, recipeToEditId);
+        await updateDoc(recipeRef, {
+            name,
+            name_lowercase: name.toLowerCase(),
+            ingredients: ingredients.map(({ name, quantity, foodId }) => ({ name, quantity, foodId })),
+            servings,
+            totalNutrition,
+            totalWeight
+        });
+
+        showToast(`Ricetta "${name}" aggiornata!`);
+        exitRecipeEditMode();
+    } catch (error) {
+        console.error("Errore aggiornamento ricetta:", error);
+        if (error.message.startsWith('Ingredienti non validi')) {
+            showToast(error.message, true);
+        } else {
+            showToast("Si è verificato un errore durante l'aggiornamento.", true);
         }
     } finally {
         saveBtn.disabled = false;
@@ -1266,7 +1354,7 @@ function renderSelectedDayMeals() {
             <div class="meal-category" data-category-name="${categoryName}">
                 <div class="meal-category-header">
                     <h3 class="text-lg font-semibold text-slate-200">${categoryName}</h3>
-                    <div class="text-sm font-medium text-slate-400 category-totals">
+                    <div class="text-xs md:text-sm font-medium text-slate-400 category-totals truncate mt-1">
                         <!-- I totali verranno aggiornati qui -->
                     </div>
                 </div>
@@ -1299,23 +1387,17 @@ function renderSelectedDayMeals() {
                 };
                 Object.keys(categoryTotals).forEach(key => categoryTotals[key] += calculated[key]);
                 return `
-                <div class="meal-item is-entering" data-id="${meal.id}">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="font-medium text-slate-200">${meal.name} (${Number(meal.quantity) || 0}g)</p>
-                            <p class="text-sm text-slate-400 mt-1">
-                                Cal: ${calculated.calories.toFixed(0)} | P: ${calculated.proteins.toFixed(1)}g | C: ${calculated.carbs.toFixed(1)}g | G: ${calculated.fats.toFixed(1)}g | F: ${calculated.fibers.toFixed(1)}g
-                            </p>
-                        </div>
-                        <div class="meal-actions">
-                            <div class="flex items-center gap-2">
-                                <button class="btn-modern bg-slate-600 !py-2 !px-3 edit-meal-btn" data-meal-id="${meal.id}" aria-label="Modifica pasto">
-                                    <i class="fas fa-pencil-alt"></i>
-                                </button>
-                                <button class="btn-modern btn-danger !py-2 !px-3 delete-meal-btn" data-meal-id="${meal.id}" aria-label="Elimina pasto">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>  
+                <div class="meal-item is-entering flex flex-col md:flex-row md:items-center p-4" data-id="${meal.id}">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-medium text-slate-200 break-words">${meal.name} (${Number(meal.quantity) || 0}g)</p>
+                        <p class="text-xs md:text-sm text-slate-400 mt-1 meal-nutrition-details">
+                            Cal:${calculated.calories.toFixed(0)} P:${calculated.proteins.toFixed(1)}g C:${calculated.carbs.toFixed(1)}g G:${calculated.fats.toFixed(1)}g F:${calculated.fibers.toFixed(1)}g
+                        </p>
+                    </div>
+                    <div class="meal-actions flex-shrink-0">
+                        <div class="flex items-center gap-2">
+                            <button class="btn-modern bg-slate-600 !py-2 !px-3 edit-meal-btn" data-meal-id="${meal.id}" aria-label="Modifica pasto"><i class="fas fa-pencil-alt"></i></button>
+                            <button class="btn-modern btn-danger !py-2 !px-3 delete-meal-btn" data-meal-id="${meal.id}" aria-label="Elimina pasto"><i class="fas fa-trash"></i></button>
                         </div>
                     </div>
                 </div>`;
@@ -1326,7 +1408,7 @@ function renderSelectedDayMeals() {
         
         // Aggiorna solo il contenuto della lista e dei totali, preservando la struttura.
         listContainer.innerHTML = mealsHTML;
-        totalsContainer.innerHTML = `Cal: ${categoryTotals.calories.toFixed(0)} | P: ${categoryTotals.proteins.toFixed(1)}g | C: ${categoryTotals.carbs.toFixed(1)}g | G: ${categoryTotals.fats.toFixed(1)}g | F: ${categoryTotals.fibers.toFixed(1)}g`;
+        totalsContainer.innerHTML = `Cal:${categoryTotals.calories.toFixed(0)} P:${categoryTotals.proteins.toFixed(1)}g C:${categoryTotals.carbs.toFixed(1)}g G:${categoryTotals.fats.toFixed(1)}g F:${categoryTotals.fibers.toFixed(1)}g`;
 
         // Applica l'animazione di entrata ai nuovi elementi
         const newItems = listContainer.querySelectorAll('.meal-item.is-entering');
@@ -1399,9 +1481,12 @@ function renderRecipes() {
                     ` : ''}
                 </div>
                 <div class="recipe-actions">
-                    <div class="flex space-x-3">
+                    <div class="flex items-center gap-3">
                         <button class="btn-modern btn-primary !py-2 !px-3 use-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Usa ricetta">
                             <i class="fas fa-plus"></i>
+                        </button>
+                        <button class="btn-modern bg-slate-600 !py-2 !px-3 edit-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Modifica ricetta">
+                            <i class="fas fa-pencil-alt"></i>
                         </button>
                         <button class="btn-modern btn-danger !py-2 !px-3 delete-recipe-btn" data-recipe-id="${recipe.id}" aria-label="Elimina ricetta">
                             <i class="fas fa-trash"></i>
@@ -2151,13 +2236,9 @@ function resetNewFoodForm() {
 
 function openEditFoodModal() {
     const foodId = document.getElementById('edit-lookup-food-btn').dataset.foodId;
-    const food = allMeals.find(f => f.id === foodId) || recipes.find(r => r.id === foodId); // Cerca anche nelle ricette se necessario
+    const food = foods.find(f => f.id === foodId); // Cerca l'alimento nel database globale
     if (!food) {
-        // Se non è nei pasti, cerca nel database completo (potrebbe non essere stato ancora usato)
-        // Questa parte richiede che `foods` sia popolato. Assumiamo che lo sia.
-        const fullFoodList = [...new Map(allMeals.map(item => [item.name, item])).values()]; // Esempio, idealmente avresti una lista completa
-        const foodFromDb = fullFoodList.find(f => f.id === foodId);
-        if(!foodFromDb) return showToast("Alimento non trovato.", true);
+        return showToast("Alimento non trovato.", true);
     }
 
     foodToEditId = foodId;
@@ -2169,6 +2250,7 @@ function openEditFoodModal() {
     document.getElementById('edit-food-fibers').value = food.fibers || '';
     document.getElementById('edit-food-modal').classList.remove('hidden');
 }
+
 function resetRecipeForm() {
     document.getElementById('recipe-name').value = '';
     document.getElementById('recipe-servings').value = '1';
@@ -2179,7 +2261,89 @@ function resetRecipeForm() {
     updateRecipeBuilderMacroBar(); // Resetta la barra
 }
 
+function openRecipeEditor(recipeId) {
+    const recipe = recipes.find(r => r.id === recipeId);
+    if (!recipe) return showToast("Ricetta non trovata.", true);
+
+    recipeToEditId = recipeId;
+
+    // Popola i campi del form
+    document.getElementById('recipe-name').value = recipe.name;
+    document.getElementById('recipe-servings').value = recipe.servings;
+
+    const ingredientsContainer = document.getElementById('recipe-ingredients');
+    ingredientsContainer.innerHTML = ''; // Pulisci gli ingredienti esistenti
+
+    recipe.ingredients.forEach(ing => {
+        const newRow = document.createElement('div');
+        newRow.className = 'ingredient-row flex gap-3 items-start';
+        newRow.innerHTML = `
+            <div class="flex-1 relative">
+                <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off" value="${ing.name}" data-food-id="${ing.foodId || ''}">
+                <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
+            </div>
+            <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" value="${ing.quantity}">
+            <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn"><i class="fas fa-trash"></i></button>
+        `;
+        ingredientsContainer.appendChild(newRow);
+    });
+
+    // Cambia l'UI per la modalità di modifica
+    document.querySelector('#recipes-content h3').textContent = 'Modifica Ricetta';
+    const saveBtn = document.getElementById('save-recipe-btn');
+    saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i> Salva Modifiche';
+    saveBtn.onclick = saveRecipeChanges; // Cambia l'azione del pulsante
+
+    // Aggiungi un pulsante "Annulla"
+    const cancelButton = document.createElement('button');
+    cancelButton.id = 'cancel-edit-recipe-btn';
+    cancelButton.className = 'btn-modern bg-slate-600 w-full mt-4';
+    cancelButton.innerHTML = '<i class="fas fa-times mr-2"></i> Annulla';
+    cancelButton.onclick = exitRecipeEditMode;
+    saveBtn.after(cancelButton);
+
+    // Scrolla alla sezione ricette e aprila se è chiusa
+    const recipeSection = document.getElementById('recipes-content').closest('.collapsible-section');
+    if (recipeSection.classList.contains('collapsed')) {
+        recipeSection.querySelector('.section-header').click();
+    }
+    recipeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById('recipe-name').focus();
+
+    // Aggiorna la barra dei macro con i dati esistenti
+    updateRecipeBuilderMacroBar();
+}
+
+function exitRecipeEditMode() {
+    recipeToEditId = null;
+    document.querySelector('#recipes-content h3').textContent = 'Crea Nuova Ricetta';
+    const saveBtn = document.getElementById('save-recipe-btn');
+    saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i> Salva Ricetta';
+    saveBtn.onclick = saveRecipe;
+
+    const cancelButton = document.getElementById('cancel-edit-recipe-btn');
+    if (cancelButton) cancelButton.remove();
+
+    resetRecipeForm();
+}
+
 // --- Funzioni di ricerca ---
+
+// Funzione di utilità per calcolare lo score di pertinenza di un risultato di ricerca
+const calculateSearchScore = (item, searchTerm) => {
+    const nameLower = item.name_lowercase || '';
+    if (nameLower === searchTerm) return 100; // Corrispondenza esatta
+    if (nameLower.startsWith(searchTerm)) return 90; // Corrispondenza prefisso
+    
+    const searchTokens = searchTerm.split(' ').filter(t => t.length > 0);
+    if (searchTokens.some(st => (item.search_tokens || []).includes(st))) return 80; // Corrispondenza token
+
+    if (nameLower.includes(searchTerm)) return 70; // Contiene la stringa
+    return 0; // Nessuna corrispondenza forte
+};
+
+// Ordina i risultati in base allo score e poi alfabeticamente
+const sortResults = (results, searchTerm) => results.sort((a, b) => calculateSearchScore(b, searchTerm) - calculateSearchScore(a, searchTerm) || a.name.localeCompare(b.name));
 
 function setupSearchHandler({ inputElement, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
     let currentResults = [];
@@ -2252,14 +2416,24 @@ async function searchFoodsOnly(searchTerm) {
             });
         }
 
-        // Aggiungi una ricerca client-side per le sottostringhe
+        // Aggiungi ricerca client-side per sottostringhe e token
+        const searchTokens = lowerCaseSearchTerm.split(' ').filter(t => t.length > 0);
         foods.forEach(food => {
-            if (!results.has(food.id) && food.name_lowercase.includes(lowerCaseSearchTerm)) {
-                results.set(food.id, { ...food, isRecipe: false });
+            if (!results.has(food.id)) {
+                const nameLower = food.name_lowercase || '';
+                const foodTokens = food.search_tokens || [];
+                // Cerca se il nome include il termine o se qualche token di ricerca matcha
+                if (nameLower.includes(lowerCaseSearchTerm) || searchTokens.some(st => foodTokens.includes(st))) {
+                    results.set(food.id, { ...food, isRecipe: false });
+                }
             }
         });
 
-        return Array.from(results.values()).slice(0, 20); // Limita i risultati finali
+        const finalResults = Array.from(results.values());
+        // Ordina i risultati in base alla pertinenza
+        sortResults(finalResults, lowerCaseSearchTerm);
+
+        return finalResults.slice(0, 20); // Limita i risultati finali
     } catch (error) {
         console.error("Errore in searchFoodsOnly:", error);
         showToast("Errore durante la ricerca nel database.", true);
@@ -2320,17 +2494,22 @@ async function searchFoodsAndRecipes(searchTerm) {
             });
         }
 
-        // Aggiungi ricerca client-side per alimenti e ricette
+        // Aggiungi ricerca client-side per sottostringhe e token su alimenti e ricette
+        const searchTokens = lowerCaseSearchTerm.split(' ').filter(t => t.length > 0);
         [...foods, ...recipes].forEach(item => {
-            if (!results.has(item.id) && item.name_lowercase.includes(lowerCaseSearchTerm)) {
-                results.set(item.id, { ...item, isRecipe: !!item.ingredients });
+            if (!results.has(item.id)) {
+                const nameLower = item.name_lowercase || '';
+                const itemTokens = item.search_tokens || []; // Le ricette non hanno search_tokens, ma è sicuro
+                if (nameLower.includes(lowerCaseSearchTerm) || searchTokens.some(st => itemTokens.includes(st))) {
+                    results.set(item.id, { ...item, isRecipe: !!item.ingredients });
+                }
             }
         });
 
         // Combina e ordina i risultati
         const combinedResults = Array.from(results.values());
-        combinedResults.sort((a, b) => a.name.localeCompare(b.name));
-        
+        sortResults(combinedResults, lowerCaseSearchTerm);
+
         return combinedResults.slice(0, 20);
     } catch (error) {
         console.error("Errore nella ricerca unificata:", error);

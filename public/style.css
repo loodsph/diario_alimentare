@@ -723,6 +723,10 @@ video {
   margin-bottom: 2rem;
 }
 
+.ml-3 {
+  margin-left: 0.75rem;
+}
+
 .mr-1 {
   margin-right: 0.25rem;
 }
@@ -815,6 +819,10 @@ video {
   height: 20rem;
 }
 
+.h-1 {
+  height: 0.25rem;
+}
+
 .max-h-48 {
   max-height: 12rem;
 }
@@ -845,6 +853,10 @@ video {
 
 .w-24 {
   width: 6rem;
+}
+
+.w-4 {
+  width: 1rem;
 }
 
 .w-5 {
@@ -938,6 +950,10 @@ video {
 
 .items-center {
   align-items: center;
+}
+
+.justify-end {
+  justify-content: flex-end;
 }
 
 .justify-center {
@@ -1060,6 +1076,14 @@ video {
   white-space: nowrap;
 }
 
+.break-words {
+  overflow-wrap: break-word;
+}
+
+.rounded {
+  border-radius: 0.25rem;
+}
+
 .rounded-2xl {
   border-radius: 1rem;
 }
@@ -1099,6 +1123,11 @@ video {
 .border-indigo-500 {
   --tw-border-opacity: 1;
   border-color: rgb(99 102 241 / var(--tw-border-opacity, 1));
+}
+
+.border-slate-600 {
+  --tw-border-opacity: 1;
+  border-color: rgb(71 85 105 / var(--tw-border-opacity, 1));
 }
 
 .border-slate-700 {
@@ -1351,10 +1380,6 @@ video {
   padding-bottom: 2rem;
 }
 
-.pl-14 {
-  padding-left: 3.5rem;
-}
-
 .pl-4 {
   padding-left: 1rem;
 }
@@ -1373,6 +1398,10 @@ video {
 
 .pr-3 {
   padding-right: 0.75rem;
+}
+
+.pt-2 {
+  padding-top: 0.5rem;
 }
 
 .pt-4 {
@@ -1500,6 +1529,11 @@ video {
 .text-indigo-400 {
   --tw-text-opacity: 1;
   color: rgb(129 140 248 / var(--tw-text-opacity, 1));
+}
+
+.text-indigo-500 {
+  --tw-text-opacity: 1;
+  color: rgb(99 102 241 / var(--tw-text-opacity, 1));
 }
 
 .text-orange-400 {
@@ -1889,7 +1923,6 @@ body {
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.1);
   border-radius: 16px;
-  padding: 1.25rem;
   transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
   position: relative;
   overflow: hidden;
@@ -1911,7 +1944,7 @@ body {
 }
 
 .meal-item:hover {
-  transform: translateX(8px);
+  transform: translateY(-4px);
   border-color: rgba(99, 102, 241, 0.3);
   box-shadow: 0 10px 30px -5px rgba(99, 102, 241, 0.2);
 }
@@ -1920,20 +1953,38 @@ body {
 .recipe-actions {
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s ease-in-out;
 }
 
-/* Mostra le azioni su hover (desktop) o quando l'elemento è attivo (mobile) */
+/* Stile Mobile: animazione a fisarmonica */
 
-.meal-item.is-active .meal-actions,
-.meal-item:hover .meal-actions,
-.recipe-card.is-active .recipe-actions,
-.recipe-card:hover .recipe-actions,
-.meal-item.newly-added .meal-actions {
-  /* Aggiungi questa riga */
-  opacity: 1;
-  pointer-events: auto;
-  /* L'animazione fadeInActions potrebbe non essere più necessaria con la transizione */
+@media (max-width: 767px) {
+  .meal-actions, .recipe-actions {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, padding-top 0.3s ease-in-out;
+  }
+
+  .meal-item.is-active .meal-actions,
+    .recipe-card.is-active .recipe-actions {
+    opacity: 1;
+    pointer-events: auto;
+    max-height: 100px;
+    padding-top: 1rem;
+  }
+}
+
+/* Stile Desktop: dissolvenza a destra */
+
+@media (min-width: 768px) {
+  .meal-actions, .recipe-actions {
+    transition: opacity 0.3s ease-in-out;
+  }
+
+  .meal-item.is-active .meal-actions,
+    .recipe-card.is-active .recipe-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* Animazione per il cambio giorno */
@@ -2059,13 +2110,62 @@ body {
 /* Mobile responsiveness */
 
 @media (max-width: 768px) {
+  body {
+    /* Riduci la dimensione del font di base per i dispositivi mobili */
+    font-size: 14px;
+  }
+
   .glass-card {
-    margin: 0 1rem;
+    /* Riduci i margini laterali per riempire meglio lo schermo */
+    margin: 0 0.5rem;
+    /* Riduci il padding interno per compattare le card */
+    padding: 1.5rem;
   }
 
   .btn-modern {
+    /* Rendi i bottoni leggermente più compatti */
     padding: 0.75rem 1.5rem;
     font-size: 0.8rem;
+  }
+
+  .main-title {
+    /* Riduci la dimensione del titolo principale su mobile */
+    font-size: clamp(2rem, 10vw, 2.5rem);
+  }
+
+  /* Riduci la dimensione dei font più grandi usati per i totali e i titoli */
+
+  .text-5xl {
+    font-size: 2.25rem;
+    line-height: 2.5rem;
+  }
+
+  /* da 3rem */
+
+  .text-4xl {
+    font-size: 2rem;
+    line-height: 2.25rem;
+  }
+
+  /* da 2.25rem */
+
+  .text-3xl {
+    font-size: 1.75rem;
+    line-height: 2rem;
+  }
+
+  /* da 1.875rem */
+
+  .text-2xl {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+
+  /* da 1.5rem */
+
+  #app {
+    padding: 0.5rem;
+    /* Riduci il padding generale dell'app */
   }
 }
 
@@ -2100,6 +2200,36 @@ select.input-modern {
   background-position: right 1rem center;
   background-size: 1rem;
   padding-right: 3rem;
+}
+
+.input-label {
+  margin-bottom: 0.5rem;
+  display: block;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+  --tw-text-opacity: 1;
+  color: rgb(203 213 225 / var(--tw-text-opacity, 1));
+}
+
+#new-food-form-grid > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.meal-form-section {
+  transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out, max-height 0.3s ease-in-out;
+  opacity: 0;
+  transform: translateY(-10px);
+  max-height: 0;
+  overflow: hidden;
+}
+
+.meal-form-section.active {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 500px;
+  /* Un valore sufficientemente grande */
 }
 
 .modal {
@@ -2419,6 +2549,15 @@ select.input-modern {
   color: rgb(203 213 225 / var(--tw-text-opacity, 1));
 }
 
+.focus\:ring-indigo-600:focus {
+  --tw-ring-opacity: 1;
+  --tw-ring-color: rgb(79 70 229 / var(--tw-ring-opacity, 1));
+}
+
+.focus\:ring-offset-slate-800:focus {
+  --tw-ring-offset-color: #1e293b;
+}
+
 @media (min-width: 640px) {
   .sm\:flex-row {
     flex-direction: row;
@@ -2438,6 +2577,14 @@ select.input-modern {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
+  .md\:flex-row {
+    flex-direction: row;
+  }
+
+  .md\:items-center {
+    align-items: center;
+  }
+
   .md\:space-x-2 > :not([hidden]) ~ :not([hidden]) {
     --tw-space-x-reverse: 0;
     margin-right: calc(0.5rem * var(--tw-space-x-reverse));
@@ -2447,6 +2594,11 @@ select.input-modern {
   .md\:px-5 {
     padding-left: 1.25rem;
     padding-right: 1.25rem;
+  }
+
+  .md\:text-sm {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
   }
 }
 
