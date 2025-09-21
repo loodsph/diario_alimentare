@@ -44,6 +44,8 @@ let nutritionGoals = {
     water: 8 // Obiettivo di bicchieri d'acqua
 };
 
+let ingredientCounter = 0;
+
 // --- INIZIALIZZAZIONE ---
 
 // Usiamo DOMContentLoaded per garantire che tutti gli script (inclusi quelli con 'defer')
@@ -232,9 +234,15 @@ function setupListeners() {
     // Food search input focus/blur effects
     foodSearchInput.addEventListener('focus', () => {
         document.getElementById('food-search-icon').classList.add('opacity-0');
+
+        // Add body class to handle viewport adjustments on mobile
+        document.body.classList.add('search-input-active');
     });
     foodSearchInput.addEventListener('blur', () => {
         if (foodSearchInput.value === '') document.getElementById('food-search-icon').classList.remove('opacity-0');
+
+        // Remove body class when search input loses focus
+        document.body.classList.remove('search-input-active');
     });
 
     // Food lookup search setup
@@ -257,6 +265,12 @@ function setupListeners() {
             </div>
         `
     });
+
+    // Set up search for initial recipe ingredient input (if it exists)
+    const initialIngredientInput = document.querySelector('.recipe-ingredient-name');
+    if (initialIngredientInput) {
+        setupIngredientSearch(initialIngredientInput);
+    }
 
     foodLookupInput.addEventListener('focus', () => {
         document.getElementById('food-lookup-search-icon').classList.add('opacity-0');
@@ -2072,13 +2086,44 @@ function executeConfirmAction() {
     hideConfirmationModal();
 }
 
+function setupIngredientSearch(ingredientInput) {
+    const resultsContainer = ingredientInput.parentElement.querySelector('.recipe-ingredient-results');
+
+    setupSearchHandler({
+        inputElement: ingredientInput,
+        resultsContainer: resultsContainer,
+        searchFunction: searchFoodsOnly,
+        onResultClick: (item) => {
+            ingredientInput.value = item.name;
+            ingredientInput.dataset.foodId = item.id;
+            // Store nutritional data for recipe calculation
+            ingredientInput.dataset.calories = item.calories || 0;
+            ingredientInput.dataset.proteins = item.proteins || 0;
+            ingredientInput.dataset.carbs = item.carbs || 0;
+            ingredientInput.dataset.fats = item.fats || 0;
+            ingredientInput.dataset.fibers = item.fibers || 0;
+            updateRecipeBuilderMacroBar();
+        },
+        itemRenderer: (item) => `
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
+                <i class="fas fa-utensils text-indigo-400 mr-3"></i>
+                <div>
+                    <div class="font-medium text-slate-200">${item.name}</div>
+                    <div class="text-sm text-slate-400">${item.calories || 0} cal/100g</div>
+                </div>
+            </div>
+        `
+    });
+}
+
 function addIngredientRow() {
     const container = document.getElementById('recipe-ingredients');
     const newIngredient = document.createElement('div');
     newIngredient.className = 'ingredient-row flex gap-3 items-start';
+    const currentIngredientId = `recipe-ingredient-name-${ingredientCounter++}`;
     newIngredient.innerHTML = `
         <div class="flex-1 relative">
-            <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off">
+            <input type="text" id="${currentIngredientId}" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off">
             <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
         </div>
         <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" aria-label="Quantità ingrediente">
@@ -2086,7 +2131,9 @@ function addIngredientRow() {
             <i class="fas fa-trash"></i>
         </button>`;
     container.appendChild(newIngredient);
-    newIngredient.querySelector('.recipe-ingredient-name').focus();
+    const ingredientInput = newIngredient.querySelector('.recipe-ingredient-name');
+    setupIngredientSearch(ingredientInput);
+    ingredientInput.focus();
 }
 
 function processInitialMeals() {
@@ -2209,6 +2256,10 @@ function openRecipeEditor(recipeId) {
             <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn"><i class="fas fa-trash"></i></button>
         `;
         ingredientsContainer.appendChild(newRow);
+
+        // Set up search functionality for this ingredient input
+        const ingredientInput = newRow.querySelector('.recipe-ingredient-name');
+        setupIngredientSearch(ingredientInput);
     });
 
     // Cambia l'UI per la modalità di modifica
