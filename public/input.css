@@ -347,6 +347,7 @@ body {
     border-radius: 16px;
     backdrop-filter: blur(20px);
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    z-index: 30;
 }
 
 .search-item {
@@ -358,6 +359,11 @@ body {
 
 .search-item:hover {
     background: rgba(99, 102, 241, 0.1);
+}
+
+/* Stili per la ricerca ingredienti ricetta */
+.recipe-ingredient-results {
+    z-index: 30;
 }
 
 /* Chart containers */

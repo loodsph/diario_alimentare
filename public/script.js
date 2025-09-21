@@ -187,12 +187,11 @@ function setupListeners() {
     document.getElementById('scan-from-file-btn').addEventListener('click', () => document.getElementById('barcode-file-input').click());
     document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
 
-    // --- IMPOSTAZIONE DEI GESTORI DI RICERCA REFACTORIZZATI ---
-
-    // Gestore per la ricerca principale (Aggiungi Pasto)
+    // Search functionality setup
+    const searchResultsContainer = document.getElementById('search-results');
     setupSearchHandler({
         inputElement: foodSearchInput,
-        resultsContainer: document.getElementById('search-results'),
+        resultsContainer: searchResultsContainer,
         searchFunction: searchFoodsAndRecipes,
         onResultClick: (item) => {
             selectedFood = item;
@@ -230,15 +229,16 @@ function setupListeners() {
         }
     });
 
+    // Food search input focus/blur effects
     foodSearchInput.addEventListener('focus', () => {
         document.getElementById('food-search-icon').classList.add('opacity-0');
-    }); 
+    });
     foodSearchInput.addEventListener('blur', () => {
         if (foodSearchInput.value === '') document.getElementById('food-search-icon').classList.remove('opacity-0');
     });
 
+    // Food lookup search setup
     const foodLookupInput = document.getElementById('food-lookup-search');
-    // Gestore per la ricerca nel database
     setupSearchHandler({
         inputElement: foodLookupInput,
         resultsContainer: document.getElementById('food-lookup-results-list'),
@@ -247,7 +247,7 @@ function setupListeners() {
             foodLookupInput.value = item.name;
             showFoodLookupDetails(item);
         },
-        itemRenderer: (item) => ` 
+        itemRenderer: (item) => `
             <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
@@ -260,214 +260,137 @@ function setupListeners() {
 
     foodLookupInput.addEventListener('focus', () => {
         document.getElementById('food-lookup-search-icon').classList.add('opacity-0');
-        // Ripristina l'espansione automatica della sezione quando si fa focus sull'input
-        const section = foodLookupInput.closest('.collapsible-section');
-        if (section && section.classList.contains('collapsed')) {
-            section.querySelector('.section-header').click();
-        }
     });
     foodLookupInput.addEventListener('blur', () => {
         if (foodLookupInput.value === '') document.getElementById('food-lookup-search-icon').classList.remove('opacity-0');
     });
 
-    // *** GESTIONE EVENTI CENTRALIZZATA (EVENT DELEGATION) ***
-    document.body.addEventListener('click', (e) => {
+    // Document-level event delegation for UI interactions
+    document.addEventListener('click', function(e) {
         const target = e.target;
 
-        // Nascondi i risultati della ricerca se si clicca fuori
-        const searchResults = document.getElementById('search-results');
-        if (searchResults.style.display === 'block' && !target.closest('#food-search-wrapper')) {
+        // Hide search results when clicking outside
+        if (!target.closest('#food-search-wrapper')) {
+            const searchResults = document.getElementById('search-results');
+            searchResults.className = 'search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden';
             searchResults.style.display = 'none';
         }
-        const lookupResults = document.getElementById('food-lookup-results-list'); 
-        if (lookupResults.style.display === 'block' && !target.closest('#food-lookup-wrapper')) { 
+
+        // Hide food lookup results when clicking outside
+        if (!target.closest('#food-lookup-wrapper')) {
+            const lookupResults = document.getElementById('food-lookup-results-list');
+            lookupResults.classList.add('hidden');
             lookupResults.style.display = 'none';
         }
-        const recipeResults = document.querySelector('.recipe-ingredient-results');
-        if (recipeResults && recipeResults.style.display === 'block' && !target.closest('.ingredient-row')) {
-            recipeResults.style.display = 'none';
-        }
 
-        // Se clicco fuori da un pasto attivo, lo disattivo
-        if (!target.closest('.meal-item')) {
-            document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
-        }
+        // Hide recipe ingredient results when clicking outside
+        document.querySelectorAll('.recipe-ingredient-results').forEach(results => {
+            if (!target.closest('.ingredient-row')) {
+                results.classList.add('hidden');
+                results.style.display = 'none';
+            }
+        });
 
-        // Sezioni collassabili
+        // Handle collapsible sections
         const sectionHeader = target.closest('.section-header');
         if (sectionHeader) {
-            const section = sectionHeader.closest('.collapsible-section');
-            // Logica migliorata: classList.toggle restituisce true se la classe è stata aggiunta (ora è collassato)
-            const isNowCollapsed = section.classList.toggle('collapsed');
-            sectionHeader.setAttribute('aria-expanded', String(!isNowCollapsed));
+            const section = sectionHeader.parentElement;
+            const content = section.querySelector('.section-content');
+            const toggleIcon = sectionHeader.querySelector('.toggle-icon');
+            const isCollapsed = section.classList.contains('collapsed');
+
+            if (isCollapsed) {
+                // Expand section
+                section.classList.remove('collapsed');
+                content.style.display = 'block';
+                sectionHeader.setAttribute('aria-expanded', 'true');
+                toggleIcon.style.transform = 'rotate(180deg)';
+
+                setTimeout(() => {
+                    content.style.height = content.scrollHeight + 'px';
+                }, 10);
+
+                setTimeout(() => {
+                    content.style.height = 'auto';
+                }, 310);
+            } else {
+                // Collapse section
+                content.style.height = content.scrollHeight + 'px';
+
+                setTimeout(() => {
+                    content.style.height = '0';
+                    sectionHeader.setAttribute('aria-expanded', 'false');
+                    toggleIcon.style.transform = 'rotate(0deg)';
+                }, 10);
+
+                setTimeout(() => {
+                    content.style.display = 'none';
+                    section.classList.add('collapsed');
+                }, 310);
+            }
         }
 
-        // Rimuovi ingrediente da ricetta
-        const removeIngredientBtn = target.closest('.remove-ingredient-btn');
-        if (removeIngredientBtn) {
-            // Usa .closest('.ingredient-row') per essere più specifico
-            removeIngredientBtn.closest('.ingredient-row').remove();
-            // Aggiorna la barra dopo aver rimosso un ingrediente
-            updateRecipeBuilderMacroBar();
-        }
-
-        // Gestione del "tap" sui pasti per mostrare i pulsanti su mobile
+        // Handle meal item clicks for mobile
         const mealItem = target.closest('.meal-item');
-        if (mealItem) {
-            const isActionButton = target.closest('.meal-actions');
-            // Solo se NON sto cliccando un pulsante di azione, gestisco lo stato attivo
-            if (!isActionButton) {
-                // Se il pasto cliccato è già attivo, lo disattivo, altrimenti attivo quello nuovo e disattivo gli altri.
-                if (mealItem.classList.contains('is-active')) {
-                    mealItem.classList.remove('is-active');
-                } else {
-                    document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
-                    mealItem.classList.add('is-active');
-                }
+        if (mealItem && !target.closest('.meal-actions')) {
+            if (mealItem.classList.contains('is-active')) {
+                mealItem.classList.remove('is-active');
+            } else {
+                document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
+                mealItem.classList.add('is-active');
             }
         }
 
-        // Gestione del "tap" sulle ricette per mostrare i pulsanti su mobile
+        // Handle recipe card clicks for mobile
         const recipeCard = target.closest('.recipe-card');
-        if (recipeCard) {
-            const isActionButton = target.closest('.recipe-actions');
-            if (!isActionButton) {
-                if (recipeCard.classList.contains('is-active')) {
-                    recipeCard.classList.remove('is-active');
-                } else {
-                    document.querySelectorAll('.recipe-card.is-active').forEach(item => item.classList.remove('is-active'));
-                    recipeCard.classList.add('is-active');
-                }
+        if (recipeCard && !target.closest('.recipe-actions')) {
+            if (recipeCard.classList.contains('is-active')) {
+                recipeCard.classList.remove('is-active');
+            } else {
+                document.querySelectorAll('.recipe-card.is-active').forEach(item => item.classList.remove('is-active'));
+                recipeCard.classList.add('is-active');
             }
         }
 
-        // Elimina un pasto
+        // Handle action buttons
         const deleteMealBtn = target.closest('.delete-meal-btn');
         if (deleteMealBtn) {
             const mealId = deleteMealBtn.dataset.mealId;
             if (mealId) deleteMeal(mealId);
         }
 
-        // Modifica un pasto
         const editMealBtn = target.closest('.edit-meal-btn');
         if (editMealBtn) {
             const mealId = editMealBtn.dataset.mealId;
             if (mealId) openEditMealModal(mealId);
         }
-        
-        // Elimina una ricetta
+
         const deleteRecipeBtn = target.closest('.delete-recipe-btn');
         if (deleteRecipeBtn) {
             const recipeId = deleteRecipeBtn.dataset.recipeId;
             if (recipeId) deleteRecipe(recipeId);
         }
-        
-        // Usa una ricetta
+
         const useRecipeBtn = target.closest('.use-recipe-btn');
         if (useRecipeBtn) {
             const recipeId = useRecipeBtn.dataset.recipeId;
             if (recipeId) useRecipe(recipeId);
         }
-        
-        // Modifica una ricetta
+
         const editRecipeBtn = target.closest('.edit-recipe-btn');
         if (editRecipeBtn) {
             const recipeId = editRecipeBtn.dataset.recipeId;
             if (recipeId) openRecipeEditor(recipeId);
         }
 
-
-        // Seleziona ingrediente dalla ricerca ricetta
-        const recipeIngredientItem = target.closest('.recipe-ingredient-item');
-        if (recipeIngredientItem) {
-            const food = currentRecipeIngredientResults.find(f => f.id === recipeIngredientItem.dataset.foodId);
-            const ingredientRow = recipeIngredientItem.closest('.ingredient-row');
-            if (food && ingredientRow) {
-                const nameInput = ingredientRow.querySelector('.recipe-ingredient-name');
-                const quantityInput = ingredientRow.querySelector('.recipe-ingredient-quantity');
-                const resultsContainer = ingredientRow.querySelector('.recipe-ingredient-results');
-
-                nameInput.value = food.name;
-                // Salva tutti i dati nutrizionali necessari per il calcolo in tempo reale
-                nameInput.dataset.foodId = food.id;
-                nameInput.dataset.proteins = food.proteins || 0;
-                nameInput.dataset.carbs = food.carbs || 0;
-                nameInput.dataset.fats = food.fats || 0;
-
-                resultsContainer.style.display = 'none';
-                quantityInput.focus();
-                // Aggiorna la barra quando un ingrediente viene selezionato
-                updateRecipeBuilderMacroBar();
-            }
-        }
-
-        // Clic su una riga dello storico
-        const historyRow = target.closest('.history-row');
-        if(historyRow) {
-            selectedDate = new Date(historyRow.dataset.date);
-            updateAllUI();
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-
-        // Clic sull'intestazione di una categoria di pasto (es. "Colazione") per
-        // pre-compilare la sezione Aggiungi Pasto.
-        const mealHeader = target.closest('.meal-category-header');
-        if (mealHeader) {
-            const mealCategoryElement = mealHeader.closest('.meal-category');
-            if (mealCategoryElement) {
-                const mealType = mealCategoryElement.dataset.categoryName;
-                const mealTypeSelect = document.getElementById('meal-type');
-                const addMealCard = document.getElementById('add-meal-card');
-
-                if (mealType && mealTypeSelect && addMealCard) {
-                    mealTypeSelect.value = mealType;
-                    addMealCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    document.getElementById('food-search').focus();
-                }
-            }
+        const removeIngredientBtn = target.closest('.remove-ingredient-btn');
+        if (removeIngredientBtn) {
+            removeIngredientBtn.closest('.ingredient-row').remove();
+            updateRecipeBuilderMacroBar();
         }
     });
-
-    // Aggiungo un listener di input delegato per gli ingredienti delle ricette
-    document.getElementById('recipe-ingredients').addEventListener('input', debounce(async (e) => {
-        const target = e.target;
-        if (target.classList.contains('recipe-ingredient-name')) {
-            const searchTerm = target.value.toLowerCase();
-            const resultsContainer = target.nextElementSibling; // Il div dei risultati
-            
-            // Pulisce l'ID se l'utente modifica il testo
-            target.dataset.foodId = '';
-
-            // Pulisce anche i dati nutrizionali
-            delete target.dataset.proteins;
-            delete target.dataset.carbs;
-            delete target.dataset.fats;
-
-            const itemRenderer = food => `
-                <div class="recipe-ingredient-item search-item" data-food-id="${food.id}">
-                    <div class="font-medium text-slate-200">${food.name}</div>
-                    <div class="text-sm text-slate-400">${food.calories} cal/100g</div>
-                </div>
-            `;
-            if (searchTerm.length >= 2) {
-                currentRecipeIngredientResults = await handleGenericFoodSearch(searchTerm, resultsContainer, itemRenderer);
-            } else {
-                resultsContainer.style.display = 'none';
-            }
-            // Aggiorna la barra anche mentre si digita (se un ingrediente viene cancellato)
-            updateRecipeBuilderMacroBar();
-        }
-
-        // Ascolta anche i cambiamenti sulla quantità
-        if (target.classList.contains('recipe-ingredient-quantity')) {
-            updateRecipeBuilderMacroBar();
-        }
-    }, 300));
-
-    // Gestione stato online/offline
-    window.addEventListener('online', () => updateOnlineStatus(true));
-    window.addEventListener('offline', () => updateOnlineStatus(false));
 }
+
 
 
 // --- FUNZIONI DI AUTH E STATO CONNESSIONE ---
@@ -2347,14 +2270,96 @@ const sortResults = (results, searchTerm) => results.sort((a, b) => calculateSea
 
 function setupSearchHandler({ inputElement, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
     let currentResults = [];
+    let dynamicDropdown = null;
 
     const debouncedSearch = debounce(async (searchTerm) => {
         if (searchTerm.length >= 2) {
             currentResults = await searchFunction(searchTerm);
-            resultsContainer.innerHTML = currentResults.length > 0 ? currentResults.map(itemRenderer).join('') : `<div class="p-4 text-slate-500">Nessun risultato.</div>`;
-            resultsContainer.style.display = 'block';
+            const renderedHTML = currentResults.length > 0 ? currentResults.map(itemRenderer).join('') : `<div class="p-4 text-slate-500">Nessun risultato.</div>`;
+
+            // Remove existing dropdown
+            if (dynamicDropdown) {
+                dynamicDropdown.remove();
+            }
+
+            // Create new dropdown directly in body
+            dynamicDropdown = document.createElement('div');
+            dynamicDropdown.innerHTML = renderedHTML;
+            dynamicDropdown.id = 'dynamic-search-results';
+
+            // Apply styles with maximum priority
+            const inputRect = inputElement.getBoundingClientRect();
+            const styles = {
+                'position': 'fixed',
+                'top': (inputRect.bottom + 8) + 'px',
+                'left': inputRect.left + 'px',
+                'width': inputRect.width + 'px',
+                'max-height': '300px',
+                'min-height': '50px',
+                'background-color': 'rgba(15, 23, 42, 0.95)',
+                'border': '1px solid rgba(148, 163, 184, 0.1)',
+                'border-radius': '16px',
+                'z-index': '2147483647',
+                'display': 'block',
+                'visibility': 'visible',
+                'opacity': '1',
+                'overflow-y': 'auto',
+                'box-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+                'backdrop-filter': 'blur(20px)',
+                '-webkit-backdrop-filter': 'blur(20px)',
+                'pointer-events': 'auto'
+            };
+
+            // Apply all styles
+            Object.entries(styles).forEach(([prop, value]) => {
+                dynamicDropdown.style.setProperty(prop, value, 'important');
+            });
+
+            // Append to body (bypasses any container issues)
+            document.body.appendChild(dynamicDropdown);
+
+            // Update position on scroll to keep dropdown attached to input
+            const updatePosition = () => {
+                if (dynamicDropdown && document.body.contains(dynamicDropdown)) {
+                    const rect = inputElement.getBoundingClientRect();
+                    dynamicDropdown.style.setProperty('top', (rect.bottom + 8) + 'px', 'important');
+                    dynamicDropdown.style.setProperty('left', rect.left + 'px', 'important');
+                    dynamicDropdown.style.setProperty('width', rect.width + 'px', 'important');
+                }
+            };
+
+            // Add scroll listener to update position
+            window.addEventListener('scroll', updatePosition, { passive: true });
+            window.addEventListener('resize', updatePosition, { passive: true });
+
+            // Store the cleanup function
+            dynamicDropdown._cleanup = () => {
+                window.removeEventListener('scroll', updatePosition);
+                window.removeEventListener('resize', updatePosition);
+            };
+
+            // Add click handler to dynamic dropdown
+            dynamicDropdown.addEventListener('click', (e) => {
+                const itemElement = e.target.closest('.search-item');
+                if (itemElement) {
+                    const itemId = itemElement.dataset.itemId;
+                    const selectedItem = currentResults.find(item => item.id === itemId);
+                    if (selectedItem) {
+                        onResultClick(selectedItem);
+                        if (dynamicDropdown._cleanup) dynamicDropdown._cleanup();
+                        dynamicDropdown.remove();
+                        dynamicDropdown = null;
+                        inputElement.blur();
+                    }
+                }
+            });
         } else {
-            resultsContainer.style.display = 'none';
+            // Hide dropdown when search term is too short
+            if (dynamicDropdown) {
+                if (dynamicDropdown._cleanup) dynamicDropdown._cleanup();
+                dynamicDropdown.remove();
+                dynamicDropdown = null;
+            }
             currentResults = [];
         }
     }, 300);
@@ -2363,16 +2368,12 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
         debouncedSearch(e.target.value.toLowerCase());
     });
 
-    resultsContainer.addEventListener('click', (e) => {
-        const itemElement = e.target.closest('.search-item');
-        if (itemElement) {
-            const itemId = itemElement.dataset.itemId;
-            const selectedItem = currentResults.find(item => item.id === itemId);
-            if (selectedItem) {
-                onResultClick(selectedItem);
-                resultsContainer.style.display = 'none';
-                inputElement.blur(); // Rimuove il focus dall'input
-            }
+    // Clean up on click outside
+    document.addEventListener('click', (e) => {
+        if (dynamicDropdown && !dynamicDropdown.contains(e.target) && !inputElement.contains(e.target)) {
+            if (dynamicDropdown._cleanup) dynamicDropdown._cleanup();
+            dynamicDropdown.remove();
+            dynamicDropdown = null;
         }
     });
 }
