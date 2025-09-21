@@ -39,7 +39,7 @@ NutriTrack is an Italian food diary web application for tracking nutrition and m
 - **Firebase Hosting** - Static site hosting
 
 ### Key Features
-- **Food Database Integration** - Uses CREA (Italian nutrition database) and Open Food Facts API
+- **Food Database Integration** - Uses valorinutritivi.ch nutrition database and Open Food Facts API
 - **Barcode Scanning** - html5-qrcode library for product scanning
 - **Custom Meals & Recipes** - User-created food entries with nutritional calculations
 - **Offline Support** - PWA capabilities with offline indicators
