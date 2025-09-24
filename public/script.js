@@ -45,6 +45,8 @@ let nutritionGoals = {
 };
 
 let ingredientCounter = 0;
+let favoriteMeals = []; // Cache per i pasti preferiti
+let favoriteMealsUnsubscribe = null;
 
 // --- INIZIALIZZAZIONE ---
 
@@ -96,6 +98,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 // Questo previene il doppio caricamento e le race condition.
                 listenToMeals();
                 listenToRecipes();
+                listenToFavoriteMeals();
                 listenToWaterHistory();
 
                 appContainer.classList.remove('hidden');
@@ -150,6 +153,10 @@ function setupListeners() {
     document.getElementById('save-recipe-btn').addEventListener('click', saveRecipe);
     document.getElementById('add-food-btn').addEventListener('click', addNewFood);
     document.getElementById('add-meal-btn').addEventListener('click', addMeal);
+
+    // Pasti preferiti toggle e azioni
+    document.getElementById('favorite-meals-toggle').addEventListener('click', toggleFavoriteMeals);
+    document.getElementById('add-to-favorites-btn').addEventListener('click', addToFavorites);
 
     // Modale di conferma generico
     document.getElementById('meal-quantity').addEventListener('input', updateMealPreview);
@@ -727,6 +734,129 @@ async function addMeal() {
     }
 }
 
+// --- FUNZIONI PASTI PREFERITI ---
+
+function updateFavoriteMealsUI() {
+    const container = document.getElementById('favorite-meals-container');
+
+    if (!container || !favoriteMeals.length) {
+        if (container) container.classList.add('hidden');
+        return;
+    }
+
+    container.classList.remove('hidden');
+    const buttonsContainer = document.getElementById('favorite-meals-content');
+    buttonsContainer.innerHTML = '';
+
+    favoriteMeals.forEach(meal => {
+        const button = document.createElement('button');
+        button.className = 'favorite-meal-btn btn-modern btn-secondary text-base px-5 py-4 w-full text-left';
+
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'remove-favorite-btn text-red-400 hover:text-red-300 text-sm px-2';
+        removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        removeBtn.onclick = (e) => {
+            e.stopPropagation();
+            removeFavoriteMeal(meal.id);
+        };
+
+        button.innerHTML = `
+            <div class="flex justify-between items-center w-full">
+                <div class="font-medium overflow-hidden text-ellipsis whitespace-nowrap flex-1 mr-2">${meal.name}</div>
+                <div id="remove-btn-${meal.id}"></div>
+            </div>
+        `;
+        button.onclick = () => selectFavoriteMeal(meal);
+        buttonsContainer.appendChild(button);
+
+        // Aggiungi il bottone di rimozione nel contenitore dedicato
+        document.getElementById(`remove-btn-${meal.id}`).appendChild(removeBtn);
+    });
+}
+
+function selectFavoriteMeal(meal) {
+    selectedFood = {
+        name: meal.name,
+        calories: meal.calories,
+        proteins: meal.proteins,
+        carbs: meal.carbs,
+        fats: meal.fats,
+        fibers: meal.fibers,
+        recipeId: meal.recipeId || null
+    };
+
+    document.getElementById('food-search').value = meal.name;
+    document.getElementById('search-results').classList.add('hidden');
+
+    const quantityInput = document.getElementById('meal-quantity');
+    if (!quantityInput.value) {
+        quantityInput.value = '100';
+    }
+
+    updateMealPreview();
+    showToast(`Selezionato: ${meal.name}`);
+}
+
+function toggleFavoriteMeals() {
+    const content = document.getElementById('favorite-meals-content');
+    const chevron = document.getElementById('favorite-meals-chevron');
+
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        chevron.classList.add('rotate-180');
+    } else {
+        content.classList.add('hidden');
+        chevron.classList.remove('rotate-180');
+    }
+}
+
+async function addToFavorites() {
+    if (!selectedFood) {
+        showToast('Seleziona prima un alimento', true);
+        return;
+    }
+
+    if (favoriteMeals.length >= 5) {
+        showToast('Massimo 5 pasti preferiti consentiti', true);
+        return;
+    }
+
+    // Controlla se è già nei preferiti
+    if (favoriteMeals.some(meal => meal.name === selectedFood.name)) {
+        showToast('Questo pasto è già nei preferiti', true);
+        return;
+    }
+
+    try {
+        const favoriteData = {
+            name: selectedFood.name,
+            calories: selectedFood.calories || 0,
+            proteins: selectedFood.proteins || 0,
+            carbs: selectedFood.carbs || 0,
+            fats: selectedFood.fats || 0,
+            fibers: selectedFood.fibers || 0,
+            recipeId: selectedFood.recipeId || null,
+            createdAt: Timestamp.now()
+        };
+
+        await addDoc(collection(db, `users/${userId}/favoriteMeals`), favoriteData);
+        showToast(`${selectedFood.name} aggiunto ai preferiti!`);
+    } catch (error) {
+        console.error("Errore aggiunta preferito:", error);
+        showToast("Errore nell'aggiungere ai preferiti", true);
+    }
+}
+
+async function removeFavoriteMeal(mealId) {
+    try {
+        await deleteDoc(doc(db, `users/${userId}/favoriteMeals`, mealId));
+        showToast('Rimosso dai preferiti');
+    } catch (error) {
+        console.error("Errore rimozione preferito:", error);
+        showToast("Errore nella rimozione", true);
+    }
+}
+
 async function deleteMeal(mealId) {
     if (!isOnline) return showToast("Sei offline. Impossibile eliminare.", true);
     
@@ -1196,6 +1326,26 @@ async function fetchFoodFromBarcode(barcode, callback) {
     }
 }
 
+function listenToFavoriteMeals() {
+    if (!userId) return;
+
+    const favoriteMealsQuery = query(
+        collection(db, `users/${userId}/favoriteMeals`),
+        orderBy('createdAt', 'desc')
+    );
+
+    favoriteMealsUnsubscribe = onSnapshot(favoriteMealsQuery, (snapshot) => {
+        favoriteMeals = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        // Aggiorna l'UI solo se l'app è inizializzata
+        if (isAppInitialized) {
+            updateFavoriteMealsUI();
+        }
+    });
+}
 
 // --- FUNZIONI DI RENDERING E AGGIORNAMENTO UI ---
 
@@ -1204,6 +1354,7 @@ function updateAllUI() {
     renderSelectedDayMeals();
     renderWeeklyHistory();
     updateCharts(dailyTotalsCache, selectedDate);
+    updateFavoriteMealsUI();
 }
 
 function updateUserUI(user) {

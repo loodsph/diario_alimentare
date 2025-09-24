@@ -108,6 +108,18 @@
                 </h2>
                 
                 <div class="space-y-6">
+                    <!-- Pasti Preferiti -->
+                    <div id="favorite-meals-container" class="hidden">
+                        <button id="favorite-meals-toggle" class="w-full text-left flex items-center justify-between p-4 bg-slate-800/50 rounded-lg hover:bg-slate-700/50 transition-colors">
+                            <div class="flex items-center gap-3">
+                                <i class="fas fa-heart text-red-400 text-lg"></i>
+                                <span class="text-base font-semibold text-slate-300">Pasti Preferiti</span>
+                            </div>
+                            <i id="favorite-meals-chevron" class="fas fa-chevron-down text-slate-400 transition-transform text-lg"></i>
+                        </button>
+                        <div id="favorite-meals-content" class="hidden mt-2 space-y-2"></div>
+                    </div>
+
                     <div class="flex justify-between items-center">
                         <label for="food-search" class="block text-sm font-semibold text-slate-300">Cerca Alimento o Scansiona</label>
                         <button id="toggle-custom-meal-btn" class="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2">
@@ -162,7 +174,13 @@
                     </div>
                     
                     <div id="meal-preview" class="hidden mt-4 p-4 bg-slate-800/50 rounded-xl text-sm text-slate-300 space-y-2 transition-all duration-300">
-                        <h4 class="font-semibold text-slate-200 mb-2">Anteprima Nutrizionale:</h4>
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="font-semibold text-slate-200">Anteprima Nutrizionale:</h4>
+                            <button id="add-to-favorites-btn" class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded transition-colors" title="Aggiungi ai preferiti">
+                                <i class="fas fa-heart mr-1"></i>
+                                Preferiti
+                            </button>
+                        </div>
                         <div class="grid grid-cols-2 gap-x-4 gap-y-1">
                             <span><i class="fas fa-fire-alt text-red-400 w-5 text-center mr-1"></i>Calorie:</span> <span id="preview-calories" class="font-bold text-right">0</span>
                             <span><i class="fas fa-drumstick-bite text-green-400 w-5 text-center mr-1"></i>Proteine:</span> <span id="preview-proteins" class="font-bold text-right">0 g</span>
