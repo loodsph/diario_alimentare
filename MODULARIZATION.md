@@ -1,7 +1,5 @@
 # NutriTrack Modularization
 
-> **Note**: Nutrition database sourced from [valorinutritivi.ch](https://valorinutritivi.ch/it/)
-
 ## Overview
 
 This document explains the modularization refactoring of the NutriTrack application, breaking down the large `script.js` file (~2800 lines) into logical, maintainable modules.
