@@ -37,13 +37,26 @@ export function formatDate(date) {
 }
 
 export function getMealTimestamp(type, selectedDate) {
-    let mealDate = new Date(selectedDate);
+    const mealDate = new Date(selectedDate);
     const today = getTodayUTC();
-    if (selectedDate.getUTCFullYear() === today.getUTCFullYear() && selectedDate.getUTCMonth() === today.getUTCMonth() && selectedDate.getUTCDate() === today.getUTCDate()) {
-        return new Date(); // Ora corrente se è oggi
+
+    if (
+        selectedDate.getUTCFullYear() === today.getUTCFullYear() &&
+        selectedDate.getUTCMonth() === today.getUTCMonth() &&
+        selectedDate.getUTCDate() === today.getUTCDate()
+    ) {
+        // Se il pasto è di oggi, usa l'ora locale corrente ma applicala alla data UTC.
+        // Questo assicura che un pasto aggiunto alle 01:00 del mattino non finisca nel giorno precedente in UTC.
+        const now = new Date();
+        mealDate.setUTCHours(now.getHours(), now.getMinutes(), now.getSeconds(), 0);
+        return mealDate;
     }
+
     const defaultTimes = {
-        '🌅 Colazione': 8, '🍽️ Pranzo': 13, '🌙 Cena': 20, '🍪 Spuntino': 16
+        '🌅 Colazione': 8,
+        '🍽️ Pranzo': 13,
+        '🌙 Cena': 20,
+        '🍪 Spuntino': 16
     };
     mealDate.setUTCHours(defaultTimes[type] || 12, 0, 0, 0);
     return mealDate;
