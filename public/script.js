@@ -48,6 +48,33 @@ let ingredientCounter = 0;
 let favoriteMeals = []; // Cache per i pasti preferiti
 let favoriteMealsUnsubscribe = null;
 
+// --- FUNZIONI UTILITY ORARI ---
+
+function getDefaultMealTypeByTime() {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const currentTime = hours * 60 + minutes; // Converti in minuti totali
+
+    // Definisci i range orari in minuti (partendo da mezzanotte = 0)
+    const breakfast = { start: 6 * 60, end: 10 * 60 + 30 }; // 06:00 - 10:30
+    const lunch = { start: 13 * 60, end: 16 * 60 + 30 }; // 13:00 - 16:30
+    const dinner = { start: 20 * 60, end: 24 * 60 }; // 20:00 - 23:59
+
+    // Cena può andare anche oltre mezzanotte (00:00 - 05:59)
+    const dinnerEarly = { start: 0, end: 5 * 60 + 59 }; // 00:00 - 05:59
+
+    if ((currentTime >= breakfast.start && currentTime <= breakfast.end)) {
+        return '🌅 Colazione';
+    } else if (currentTime >= lunch.start && currentTime <= lunch.end) {
+        return '🍽️ Pranzo';
+    } else if (currentTime >= dinner.start || currentTime <= dinnerEarly.end) {
+        return '🌙 Cena';
+    } else {
+        return '🍪 Spuntino';
+    }
+}
+
 // --- INIZIALIZZAZIONE ---
 
 // Usiamo DOMContentLoaded per garantire che tutti gli script (inclusi quelli con 'defer')
@@ -87,6 +114,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
                 // Ora che tutti i dati sono caricati e processati, aggiorna l'intera UI.
                 updateAllUI();
+
+                // Imposta il tipo di pasto di default basato sull'orario
+                initializeMealTypeByTime();
                 
                 // Avvia il listener per i dati dell'acqua del giorno corrente.
                 listenToWaterData();
@@ -2337,6 +2367,9 @@ function resetAddMealForm() {
     updateMealPreview(); // Nasconde l'anteprima
     document.getElementById('food-search').focus();
 
+    // Imposta il tipo di pasto in base all'orario corrente
+    document.getElementById('meal-type').value = getDefaultMealTypeByTime();
+
     // Resetta anche il form del pasto personalizzato
     document.getElementById('custom-meal-name').value = '';
     document.getElementById('custom-meal-calories').value = '';
@@ -2347,6 +2380,11 @@ function resetAddMealForm() {
     if (isCustomMealMode) {
         toggleCustomMealForm(); // Torna alla modalità di ricerca
     }
+}
+
+function initializeMealTypeByTime() {
+    // Imposta il tipo di pasto di default all'avvio dell'app
+    document.getElementById('meal-type').value = getDefaultMealTypeByTime();
 }
 
 function resetNewFoodForm() {
