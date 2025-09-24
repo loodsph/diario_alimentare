@@ -2801,6 +2801,15 @@ function updateMealPreview() {
     document.getElementById('preview-carbs').textContent = `${((foodData.carbs || 0) * ratio).toFixed(1)} g`;
     document.getElementById('preview-fats').textContent = `${((foodData.fats || 0) * ratio).toFixed(1)} g`;
     document.getElementById('preview-fibers').textContent = `${((foodData.fibers || 0) * ratio).toFixed(1)} g`;
+
+    // Mostra/nascondi il bottone "Aggiungi ai preferiti" in base a se è già nei preferiti
+    const addToFavoritesBtn = document.getElementById('add-to-favorites-btn');
+    const isAlreadyFavorite = favoriteMeals.some(meal => meal.name === selectedFood.name);
+    if (isAlreadyFavorite) {
+        addToFavoritesBtn.classList.add('hidden');
+    } else {
+        addToFavoritesBtn.classList.remove('hidden');
+    }
 }
 
 // --- Funzioni Scanner ---
