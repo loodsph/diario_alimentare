@@ -286,7 +286,7 @@ function setupListeners() {
         // Hide search results when clicking outside
         if (!target.closest('#food-search-wrapper')) {
             const searchResults = document.getElementById('search-results');
-            searchResults.className = 'search-results mt-2 max-h-60 overflow-y-auto absolute w-full z-20 hidden';
+            searchResults.className = 'search-results mt-2 max-h-60 overflow-y-auto absolute w-full hidden';
             searchResults.style.display = 'none';
         }
 

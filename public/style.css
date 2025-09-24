@@ -673,10 +673,6 @@ video {
   z-index: 10;
 }
 
-.z-20 {
-  z-index: 20;
-}
-
 .z-40 {
   z-index: 40;
 }
@@ -1817,6 +1813,7 @@ body {
   transition: opacity 0.3s;
   pointer-events: none;
   /* Permette ai click di passare attraverso */
+  z-index: -1;
 }
 
 .glow:hover::after {
@@ -2055,7 +2052,7 @@ body {
   -webkit-backdrop-filter: blur(20px);
           backdrop-filter: blur(20px);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  z-index: 30;
+  z-index: 50;
 }
 
 .search-item {
@@ -2072,7 +2069,7 @@ body {
 /* Stili per la ricerca ingredienti ricetta */
 
 .recipe-ingredient-results {
-  z-index: 30;
+  z-index: 50;
 }
 
 /* Chart containers */
@@ -2254,6 +2251,7 @@ select.input-modern {
   transform: translateY(0);
   max-height: 500px;
   /* Un valore sufficientemente grande */
+  overflow: visible;
 }
 
 .modal {

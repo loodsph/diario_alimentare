@@ -139,6 +139,7 @@ body {
     opacity: 0;
     transition: opacity 0.3s;
     pointer-events: none; /* Permette ai click di passare attraverso */
+    z-index: -1;
 }
 
 .glow:hover::after {
@@ -347,7 +348,7 @@ body {
     border-radius: 16px;
     backdrop-filter: blur(20px);
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    z-index: 30;
+    z-index: 50;
 }
 
 .search-item {
@@ -363,7 +364,7 @@ body {
 
 /* Stili per la ricerca ingredienti ricetta */
 .recipe-ingredient-results {
-    z-index: 30;
+    z-index: 50;
 }
 
 /* Chart containers */
