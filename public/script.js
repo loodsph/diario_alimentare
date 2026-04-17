@@ -8,45 +8,88 @@ import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
 import { firebaseConfig } from './firebase-config.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
-let app, auth, db;
-let userId = null;
-let selectedFood = null;
-let selectedDate = getTodayUTC();
-let allMeals = [];
-let dailyMealsCache = {}; // Cache per i pasti giornalieri raggruppati e ordinati
-let dailyTotalsCache = {}; // Cache per i totali nutrizionali giornalieri
-let foods = []; // Cache per tutti gli alimenti del database
-let recipes = [];
-let currentRecipeIngredientResults = [];
-let mealToEditId = null; // ID del pasto attualmente in modifica
-let isOnline = navigator.onLine;
-let foodToEditId = null; // ID dell'alimento attualmente in modifica
-let onDecodeCallback = null;
-let html5QrCode = null;
-let availableCameras = [];
-let isCustomMealMode = false;
-let currentCameraIndex = 0;
-let waterCount = 0;
-let isAppInitialized = false; // Flag per controllare se l'inizializzazione è completa
-let recipeToEditId = null; // ID della ricetta in modifica
-let onConfirmAction = null; // Callback per il modale di conferma
-// let isDragging = false; // Flag per gestire il conflitto click/drag
-let waterUnsubscribe = null;
-let waterHistory = {}; // e.g., { '2024-05-24': 8, '2024-05-23': 6 }
-let waterHistoryUnsubscribe = null;
+// Le variabili sono raggruppate per responsabilità per facilitare la navigazione.
 
+// Firebase
+let app, auth, db;
+
+// Auth & ciclo di vita
+let userId = null;
+let isAppInitialized = false;
+let isOnline = navigator.onLine;
+
+// Navigazione temporale
+let selectedDate = getTodayUTC();
+
+// Dati applicazione
+let allMeals = [];
+let dailyMealsCache = {};       // Pasti raggruppati per categoria (per rendering)
+let dailyTotalsCache = {};      // Totali nutrizionali per data
+let foods = [];                  // Cache on-demand degli alimenti (popolata dalle ricerche)
+let recipes = [];
+let favoriteMeals = [];
+
+// Obiettivi nutrizionali
 let nutritionGoals = {
     calories: 2000,
     proteins: 150,
     carbs: 250,
     fats: 70,
     fibers: 30,
-    water: 8 // Obiettivo di bicchieri d'acqua
+    water: 8
 };
 
+// Tracciamento acqua
+let waterCount = 0;
+let waterHistory = {};
+
+// Stato UI e form
+let selectedFood = null;
+let isCustomMealMode = false;
+let mealToEditId = null;
+let foodToEditId = null;
+let recipeToEditId = null;
+let onConfirmAction = null;
 let ingredientCounter = 0;
-let favoriteMeals = []; // Cache per i pasti preferiti
+let currentRecipeIngredientResults = [];
+
+// Scanner barcode
+let html5QrCode = null;
+let availableCameras = [];
+let currentCameraIndex = 0;
+let onDecodeCallback = null;
+
+// Listener Firestore (unsubscribe functions)
+let mealsUnsubscribe = null;
+let recipesUnsubscribe = null;
+let waterUnsubscribe = null;
+let waterHistoryUnsubscribe = null;
 let favoriteMealsUnsubscribe = null;
+
+// Vista ispezionabile dello stato per il debug (es. console.log(appState))
+const appState = {
+    get auth() { return { userId, isAppInitialized, isOnline }; },
+    get navigation() { return { selectedDate: selectedDate.toISOString() }; },
+    get data() {
+        return {
+            meals: allMeals.length,
+            foodsCache: foods.length,
+            recipes: recipes.length,
+            favoriteMeals: favoriteMeals.length,
+        };
+    },
+    get water() { return { waterCount, historyDays: Object.keys(waterHistory).length }; },
+    get ui() {
+        return {
+            selectedFood: selectedFood?.name ?? null,
+            isCustomMealMode,
+            mealToEditId,
+            foodToEditId,
+            recipeToEditId,
+        };
+    },
+    get goals() { return { ...nutritionGoals }; },
+};
 
 // --- FUNZIONI UTILITY ORARI ---
 
@@ -315,6 +358,11 @@ function setupListeners() {
     foodLookupInput.addEventListener('blur', () => {
         if (foodLookupInput.value === '') document.getElementById('food-lookup-search-icon').classList.remove('opacity-0');
     });
+    // Nasconde il pulsante "Modifica" e i dettagli quando l'utente inizia a digitare una nuova ricerca
+    foodLookupInput.addEventListener('input', () => {
+        document.getElementById('edit-lookup-food-btn').classList.add('hidden');
+        document.getElementById('food-lookup-details').classList.add('hidden');
+    });
 
     // Document-level event delegation for UI interactions
     document.addEventListener('click', function(e) {
@@ -516,41 +564,46 @@ function toggleCustomMealForm() {
 async function loadInitialData() {
     if (!userId) return;
 
-    try {
-        // 1. Carica tutti i dati necessari in parallelo per velocizzare l'avvio.
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        const foodsQuery = query(collection(db, 'foods'), orderBy('name_lowercase'));
-        const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
-        const recipesQuery = collection(db, `users/${userId}/recipes`);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)), orderBy('date', 'desc'));
+    const recipesQuery = collection(db, `users/${userId}/recipes`);
 
-        const [foodsSnapshot, mealsSnapshot, recipesSnapshot, _] = await Promise.all([
-            getDocs(foodsQuery),
-            getDocs(mealsQuery),
-            getDocs(recipesQuery),
-            loadNutritionGoals() // Carica gli obiettivi in parallelo
-        ]);
+    // Promise.allSettled garantisce che un errore parziale non blocchi tutto il caricamento.
+    const [mealsResult, recipesResult, goalsResult] = await Promise.allSettled([
+        getDocs(mealsQuery),
+        getDocs(recipesQuery),
+        loadNutritionGoals()
+    ]);
 
-        foods = foodsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        allMeals = mealsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
-        recipes = recipesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        // Ordina i pasti e calcola i totali una sola volta dopo il caricamento iniziale.
-        processInitialMeals();
-    } catch (error) {
-        console.error("Errore durante il caricamento dei dati iniziali:", error);
-        showToast("Errore nel caricare i dati.", true);
-        // Rilancia l'errore per fermare l'inizializzazione e mostrare un messaggio all'utente.
-        throw error;
+    if (mealsResult.status === 'fulfilled') {
+        allMeals = mealsResult.value.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
+    } else {
+        console.error("Errore caricamento pasti:", mealsResult.reason);
+        showToast("Errore nel caricare i pasti.", true);
     }
+
+    if (recipesResult.status === 'fulfilled') {
+        recipes = recipesResult.value.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } else {
+        console.error("Errore caricamento ricette:", recipesResult.reason);
+    }
+
+    if (goalsResult.status === 'rejected') {
+        console.error("Errore caricamento obiettivi:", goalsResult.reason);
+    }
+
+    // Ordina i pasti e calcola i totali una sola volta dopo il caricamento iniziale.
+    processInitialMeals();
 }
 
 function listenToMeals() {
+    if (mealsUnsubscribe) mealsUnsubscribe(); // Chiude il listener precedente per evitare memory leak
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)));
-    
-    onSnapshot(mealsQuery, (snapshot) => {
+
+    mealsUnsubscribe = onSnapshot(mealsQuery, (snapshot) => {
         // Aggiorna l'UI solo se l'app è già stata inizializzata.
         // Questo previene race conditions durante il caricamento iniziale,
         // ignorando il primo snapshot che contiene dati già caricati.
@@ -588,9 +641,10 @@ function listenToMeals() {
 }
 
 function listenToRecipes() {
+    if (recipesUnsubscribe) recipesUnsubscribe(); // Chiude il listener precedente per evitare memory leak
     try {
         const recipesCollection = collection(db, `users/${userId}/recipes`);
-        onSnapshot(recipesCollection, (snapshot) => {
+        recipesUnsubscribe = onSnapshot(recipesCollection, (snapshot) => {
             recipes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             renderRecipes();
         });
@@ -1357,6 +1411,7 @@ async function fetchFoodFromBarcode(barcode, callback) {
 }
 
 function listenToFavoriteMeals() {
+    if (favoriteMealsUnsubscribe) favoriteMealsUnsubscribe(); // Chiude il listener precedente
     if (!userId) return;
 
     const favoriteMealsQuery = query(
@@ -1782,13 +1837,27 @@ function renderWaterTracker() {
     const text = document.getElementById('water-count-text');
     if (!container || !text) return;
 
-    container.innerHTML = '';
-    for (let i = 1; i <= nutritionGoals.water; i++) {
-        const isFilled = i <= waterCount;
-        container.innerHTML += `<i class="fas fa-glass-water water-glass ${isFilled ? 'filled' : ''}" aria-hidden="true"></i>`;
+    const goal = nutritionGoals.water;
+    const existingGlasses = container.children;
+
+    // Aggiunge o rimuove bicchieri solo se il numero obiettivo è cambiato
+    while (existingGlasses.length < goal) {
+        const glass = document.createElement('i');
+        glass.className = 'fas fa-glass-water water-glass';
+        glass.setAttribute('aria-hidden', 'true');
+        container.appendChild(glass);
     }
-    
-    text.textContent = `${waterCount} / ${nutritionGoals.water} bicchieri`;
+    while (existingGlasses.length > goal) {
+        container.removeChild(container.lastChild);
+    }
+
+    // Aggiorna solo la classe filled senza ricreare gli elementi (evita il flickering)
+    Array.from(existingGlasses).forEach((glass, i) => {
+        const shouldBeFilled = i < waterCount;
+        glass.classList.toggle('filled', shouldBeFilled);
+    });
+
+    text.textContent = `${waterCount} / ${goal} bicchieri`;
 
     // Aggiorna la barra di progresso nella sezione Obiettivi
     const waterProgressText = document.getElementById('water-progress-text');
@@ -1911,6 +1980,9 @@ function resetAppData() {
     dailyMealsCache = {}; // Pulisce la cache al logout
     destroyCharts();
     document.getElementById('selected-day-meals').innerHTML = '';
+    if (mealsUnsubscribe) { mealsUnsubscribe(); mealsUnsubscribe = null; }
+    if (recipesUnsubscribe) { recipesUnsubscribe(); recipesUnsubscribe = null; }
+    if (favoriteMealsUnsubscribe) { favoriteMealsUnsubscribe(); favoriteMealsUnsubscribe = null; }
     if (waterHistoryUnsubscribe) { waterHistoryUnsubscribe(); waterHistoryUnsubscribe = null; }
     if (waterUnsubscribe) { waterUnsubscribe(); waterUnsubscribe = null; }
     document.getElementById('saved-recipes').innerHTML = '';
@@ -2267,8 +2339,34 @@ function executeConfirmAction() {
     hideConfirmationModal();
 }
 
+function markIngredientConfirmed(ingredientInput, isConfirmed) {
+    const row = ingredientInput.closest('.ingredient-row');
+    let indicator = row.querySelector('.ingredient-status');
+    if (!indicator) {
+        indicator = document.createElement('span');
+        indicator.className = 'ingredient-status text-xs font-medium ml-1';
+        ingredientInput.parentElement.appendChild(indicator);
+    }
+    if (isConfirmed) {
+        indicator.textContent = '✓';
+        indicator.className = 'ingredient-status text-xs font-medium ml-1 text-green-400';
+        ingredientInput.classList.remove('border-slate-600');
+        ingredientInput.classList.add('border-green-500/50');
+    } else {
+        indicator.textContent = '';
+        ingredientInput.classList.remove('border-green-500/50');
+        ingredientInput.classList.add('border-slate-600');
+    }
+}
+
 function setupIngredientSearch(ingredientInput) {
     const resultsContainer = ingredientInput.parentElement.querySelector('.recipe-ingredient-results');
+
+    // Quando l'utente digita manualmente, resetta lo stato "confermato"
+    ingredientInput.addEventListener('input', () => {
+        delete ingredientInput.dataset.foodId;
+        markIngredientConfirmed(ingredientInput, false);
+    });
 
     setupSearchHandler({
         inputElement: ingredientInput,
@@ -2277,12 +2375,13 @@ function setupIngredientSearch(ingredientInput) {
         onResultClick: (item) => {
             ingredientInput.value = item.name;
             ingredientInput.dataset.foodId = item.id;
-            // Store nutritional data for recipe calculation
+            // Memorizza i dati nutrizionali per il calcolo della ricetta
             ingredientInput.dataset.calories = item.calories || 0;
             ingredientInput.dataset.proteins = item.proteins || 0;
             ingredientInput.dataset.carbs = item.carbs || 0;
             ingredientInput.dataset.fats = item.fats || 0;
             ingredientInput.dataset.fibers = item.fibers || 0;
+            markIngredientConfirmed(ingredientInput, true);
             updateRecipeBuilderMacroBar();
         },
         itemRenderer: (item) => `
@@ -2393,11 +2492,22 @@ function resetNewFoodForm() {
     document.getElementById('new-food-name').focus();
 }
 
-function openEditFoodModal() {
+async function openEditFoodModal() {
     const foodId = document.getElementById('edit-lookup-food-btn').dataset.foodId;
-    const food = foods.find(f => f.id === foodId); // Cerca l'alimento nel database globale
+    if (!foodId) return showToast("Nessun alimento selezionato.", true);
+
+    // Prima controlla la cache, poi fetcha da Firestore se necessario
+    let food = foods.find(f => f.id === foodId);
     if (!food) {
-        return showToast("Alimento non trovato.", true);
+        try {
+            const foodDoc = await getDoc(doc(db, 'foods', foodId));
+            if (!foodDoc.exists()) return showToast("Alimento non trovato.", true);
+            food = { id: foodDoc.id, ...foodDoc.data() };
+            foods.push(food); // Aggiunge alla cache per usi futuri
+        } catch (error) {
+            console.error("Errore nel caricare l'alimento:", error);
+            return showToast("Errore nel caricare i dati dell'alimento.", true);
+        }
     }
 
     foodToEditId = foodId;
@@ -2449,6 +2559,15 @@ function openRecipeEditor(recipeId) {
         // Set up search functionality for this ingredient input
         const ingredientInput = newRow.querySelector('.recipe-ingredient-name');
         setupIngredientSearch(ingredientInput);
+        // Marca gli ingredienti pre-caricati come confermati (hanno già i dati nutrizionali)
+        if (ing.foodId) {
+            ingredientInput.dataset.calories = ing.calories || 0;
+            ingredientInput.dataset.proteins = ing.proteins || 0;
+            ingredientInput.dataset.carbs = ing.carbs || 0;
+            ingredientInput.dataset.fats = ing.fats || 0;
+            ingredientInput.dataset.fibers = ing.fibers || 0;
+            markIngredientConfirmed(ingredientInput, true);
+        }
     });
 
     // Cambia l'UI per la modalità di modifica
@@ -2511,10 +2630,15 @@ const sortResults = (results, searchTerm) => results.sort((a, b) => calculateSea
 function setupSearchHandler({ inputElement, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
     let currentResults = [];
     let dynamicDropdown = null;
+    let searchGeneration = 0; // Contatore per scartare risultati di ricerche precedenti (race condition)
 
     const debouncedSearch = debounce(async (searchTerm) => {
+        const generation = ++searchGeneration;
         if (searchTerm.length >= 2) {
-            currentResults = await searchFunction(searchTerm);
+            const results = await searchFunction(searchTerm);
+            // Se nel frattempo è partita un'altra ricerca, ignora questi risultati
+            if (generation !== searchGeneration) return;
+            currentResults = results;
             const renderedHTML = currentResults.length > 0 ? currentResults.map(itemRenderer).join('') : `<div class="p-4 text-slate-500">Nessun risultato.</div>`;
 
             // Remove existing dropdown
@@ -2602,7 +2726,7 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
             }
             currentResults = [];
         }
-    }, 300);
+    }, 500);
 
     inputElement.addEventListener('input', (e) => {
         debouncedSearch(e.target.value.toLowerCase());
@@ -2657,13 +2781,19 @@ async function searchFoodsOnly(searchTerm) {
             });
         }
 
-        // Aggiungi ricerca client-side per sottostringhe e token
+        // Aggiorna la cache on-demand con i nuovi risultati da Firestore
+        results.forEach((food, id) => {
+            if (!foods.some(f => f.id === id)) {
+                foods.push(food);
+            }
+        });
+
+        // Ricerca client-side nella cache per trovare corrispondenze parziali non coperte dalle query Firestore
         const searchTokens = lowerCaseSearchTerm.split(' ').filter(t => t.length > 0);
         foods.forEach(food => {
             if (!results.has(food.id)) {
                 const nameLower = food.name_lowercase || '';
                 const foodTokens = food.search_tokens || [];
-                // Cerca se il nome include il termine o se qualche token di ricerca matcha
                 if (nameLower.includes(lowerCaseSearchTerm) || searchTokens.some(st => foodTokens.includes(st))) {
                     results.set(food.id, { ...food, isRecipe: false });
                 }
@@ -2735,12 +2865,19 @@ async function searchFoodsAndRecipes(searchTerm) {
             });
         }
 
-        // Aggiungi ricerca client-side per sottostringhe e token su alimenti e ricette
+        // Aggiorna la cache on-demand con i nuovi alimenti trovati su Firestore
+        results.forEach((item, id) => {
+            if (!item.isRecipe && !foods.some(f => f.id === id)) {
+                foods.push(item);
+            }
+        });
+
+        // Ricerca client-side nella cache per corrispondenze parziali non coperte dalle query Firestore
         const searchTokens = lowerCaseSearchTerm.split(' ').filter(t => t.length > 0);
         [...foods, ...recipes].forEach(item => {
             if (!results.has(item.id)) {
                 const nameLower = item.name_lowercase || '';
-                const itemTokens = item.search_tokens || []; // Le ricette non hanno search_tokens, ma è sicuro
+                const itemTokens = item.search_tokens || [];
                 if (nameLower.includes(lowerCaseSearchTerm) || searchTokens.some(st => itemTokens.includes(st))) {
                     results.set(item.id, { ...item, isRecipe: !!item.ingredients });
                 }
