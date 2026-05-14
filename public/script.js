@@ -901,11 +901,6 @@ async function addToFavorites() {
         return;
     }
 
-    if (favoriteMeals.length >= 5) {
-        showToast('Massimo 5 pasti preferiti consentiti', true);
-        return;
-    }
-
     // Controlla se è già nei preferiti
     if (favoriteMeals.some(meal => meal.name === selectedFood.name)) {
         showToast('Questo pasto è già nei preferiti', true);
