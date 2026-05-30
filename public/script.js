@@ -7,6 +7,7 @@ import { showToast, triggerFlashAnimation } from './modules/uiHelpers.js';
 import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
 import { firebaseConfig } from './firebase-config.js';
 import { startScanner, stopScanner, handleCameraChange, toggleFlash, handleFileSelect } from './modules/scanner.js';
+import { getGeminiApiKey, saveGeminiApiKey, analyzePhoto, refineWithAnswer, parseResponse } from './modules/aiPhotoAnalysis.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
 // Le variabili sono raggruppate per responsabilità per facilitare la navigazione.
@@ -269,6 +270,15 @@ function setupListeners() {
     document.getElementById('toggle-flash-btn').addEventListener('click', toggleFlash);
     document.getElementById('scan-from-file-btn').addEventListener('click', () => document.getElementById('barcode-file-input').click());
     document.getElementById('barcode-file-input').addEventListener('change', handleFileSelect);
+
+    // AI Photo Analysis
+    document.getElementById('ai-photo-btn').addEventListener('click', openAiPhotoModal);
+    document.getElementById('close-ai-photo-btn').addEventListener('click', closeAiPhotoModal);
+    document.getElementById('save-api-key-btn').addEventListener('click', handleSaveApiKey);
+    document.getElementById('ai-photo-input').addEventListener('change', handleAiPhotoSelect);
+    document.getElementById('ai-analyze-btn').addEventListener('click', handleAiAnalyze);
+    document.getElementById('ai-refine-btn').addEventListener('click', handleAiRefine);
+    document.getElementById('ai-use-data-btn').addEventListener('click', handleAiUseData);
 
     // Search functionality setup
     const searchResultsContainer = document.getElementById('search-results');
@@ -3009,4 +3019,230 @@ function populateNewFoodForm(foodData) {
     
     showToast(`Dati di "${foodData.name}" importati. Controlla e salva.`);
     document.getElementById('new-food-name').focus();
+}
+
+// --- AI PHOTO ANALYSIS ---
+
+let aiCurrentImageBase64 = null;
+let aiCurrentMimeType = null;
+let aiCurrentParsed = null;
+let aiLastRawResponse = null;
+
+function openAiPhotoModal() {
+    const modal = document.getElementById('ai-photo-modal');
+    resetAiModal();
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    const apiKey = getGeminiApiKey();
+    document.getElementById('ai-api-key-section').classList.toggle('hidden', !!apiKey);
+}
+
+function closeAiPhotoModal() {
+    document.getElementById('ai-photo-modal').classList.add('hidden');
+    document.getElementById('ai-photo-modal').classList.remove('flex');
+    resetAiModal();
+}
+
+function resetAiModal() {
+    aiCurrentImageBase64 = null;
+    aiCurrentMimeType = null;
+    aiCurrentParsed = null;
+    aiLastRawResponse = null;
+
+    document.getElementById('ai-photo-placeholder').classList.remove('hidden');
+    document.getElementById('ai-photo-preview').classList.add('hidden');
+    document.getElementById('ai-photo-preview').src = '';
+    document.getElementById('ai-photo-input').value = '';
+    document.getElementById('ai-analyze-btn').classList.add('hidden');
+    document.getElementById('ai-loading').classList.add('hidden');
+    document.getElementById('ai-results').classList.add('hidden');
+    document.getElementById('ai-error').classList.add('hidden');
+    document.getElementById('ai-followup-section').classList.add('hidden');
+    document.getElementById('ai-user-answer').value = '';
+    document.getElementById('ai-macros-grid').innerHTML = '';
+    document.getElementById('ai-notes').classList.add('hidden');
+}
+
+function handleSaveApiKey() {
+    const input = document.getElementById('gemini-api-key-input');
+    const key = input.value.trim();
+    if (!key) {
+        showToast('Inserisci una API key valida.', true);
+        return;
+    }
+    saveGeminiApiKey(key);
+    document.getElementById('ai-api-key-section').classList.add('hidden');
+    input.value = '';
+    showToast('API key salvata.');
+}
+
+function handleAiPhotoSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        // Estrai base64 e mimeType dalla data URL
+        const [meta, base64] = dataUrl.split(',');
+        aiCurrentMimeType = meta.match(/:(.*?);/)[1];
+        aiCurrentImageBase64 = base64;
+
+        document.getElementById('ai-photo-placeholder').classList.add('hidden');
+        const preview = document.getElementById('ai-photo-preview');
+        preview.src = dataUrl;
+        preview.classList.remove('hidden');
+        document.getElementById('ai-analyze-btn').classList.remove('hidden');
+        document.getElementById('ai-results').classList.add('hidden');
+        document.getElementById('ai-error').classList.add('hidden');
+    };
+    reader.readAsDataURL(file);
+}
+
+async function handleAiAnalyze() {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+        document.getElementById('ai-api-key-section').classList.remove('hidden');
+        showToast('Inserisci prima la tua API key Gemini.', true);
+        return;
+    }
+    if (!aiCurrentImageBase64) {
+        showToast('Seleziona prima una foto.', true);
+        return;
+    }
+
+    document.getElementById('ai-analyze-btn').classList.add('hidden');
+    document.getElementById('ai-loading').classList.remove('hidden');
+    document.getElementById('ai-results').classList.add('hidden');
+    document.getElementById('ai-error').classList.add('hidden');
+
+    try {
+        const rawText = await analyzePhoto(apiKey, aiCurrentImageBase64, aiCurrentMimeType);
+        aiLastRawResponse = rawText;
+        const parsed = parseResponse(rawText);
+        aiCurrentParsed = parsed;
+        renderAiResults(parsed);
+    } catch (err) {
+        showAiError(err.message);
+        document.getElementById('ai-analyze-btn').classList.remove('hidden');
+    } finally {
+        document.getElementById('ai-loading').classList.add('hidden');
+    }
+}
+
+async function handleAiRefine() {
+    const apiKey = getGeminiApiKey();
+    const answer = document.getElementById('ai-user-answer').value.trim();
+    if (!answer) {
+        showToast('Scrivi una risposta prima di aggiornare la stima.', true);
+        return;
+    }
+
+    document.getElementById('ai-refine-btn').disabled = true;
+    document.getElementById('ai-refine-btn').innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Aggiornamento...';
+    document.getElementById('ai-error').classList.add('hidden');
+
+    try {
+        const rawText = await refineWithAnswer(
+            apiKey,
+            aiCurrentImageBase64,
+            aiCurrentMimeType,
+            aiLastRawResponse,
+            answer
+        );
+        aiLastRawResponse = rawText;
+        const parsed = parseResponse(rawText);
+        aiCurrentParsed = parsed;
+        renderAiResults(parsed);
+        document.getElementById('ai-user-answer').value = '';
+    } catch (err) {
+        showAiError(err.message);
+    } finally {
+        document.getElementById('ai-refine-btn').disabled = false;
+        document.getElementById('ai-refine-btn').innerHTML = '<i class="fas fa-sync mr-2"></i>Aggiorna stima';
+    }
+}
+
+function renderAiResults(parsed) {
+    document.getElementById('ai-results').classList.remove('hidden');
+
+    document.getElementById('ai-food-name').textContent = parsed.alimento || 'Alimento sconosciuto';
+
+    const qty = parsed.quantita_stimata_g || 0;
+    document.getElementById('ai-food-quantity').textContent = `Quantità stimata: ~${qty}g`;
+
+    const badge = document.getElementById('ai-confidence-badge');
+    const conf = parsed.confidenza || 'bassa';
+    const badgeColors = { alta: 'bg-green-800 text-green-200', media: 'bg-yellow-800 text-yellow-200', bassa: 'bg-red-800 text-red-200' };
+    badge.className = `text-xs px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0 ${badgeColors[conf] || badgeColors.bassa}`;
+    badge.textContent = `Confidenza: ${conf}`;
+
+    const v = parsed.valori_per_100g || {};
+    const macros = [
+        { label: 'Calorie', value: Math.round(v.calorie || 0), unit: 'kcal', color: 'text-red-400', icon: 'fa-fire-alt' },
+        { label: 'Proteine', value: (v.proteine || 0).toFixed(1), unit: 'g', color: 'text-green-400', icon: 'fa-drumstick-bite' },
+        { label: 'Carboidrati', value: (v.carboidrati || 0).toFixed(1), unit: 'g', color: 'text-yellow-400', icon: 'fa-bread-slice' },
+        { label: 'Grassi', value: (v.grassi || 0).toFixed(1), unit: 'g', color: 'text-pink-400', icon: 'fa-bacon' },
+        { label: 'Fibre', value: (v.fibre || 0).toFixed(1), unit: 'g', color: 'text-blue-400', icon: 'fa-seedling' },
+    ];
+
+    const grid = document.getElementById('ai-macros-grid');
+    grid.innerHTML = macros.map(m => `
+        <div class="bg-slate-800/50 rounded-lg p-3 text-center">
+            <i class="fas ${m.icon} ${m.color} mb-1 text-sm"></i>
+            <div class="font-bold text-slate-100">${m.value} <span class="text-xs text-slate-400">${m.unit}</span></div>
+            <div class="text-xs text-slate-500">${m.label} /100g</div>
+        </div>
+    `).join('');
+
+    const questions = parsed.domande_chiarimento || [];
+    const followupSection = document.getElementById('ai-followup-section');
+    if (questions.length > 0) {
+        const list = document.getElementById('ai-questions-list');
+        list.innerHTML = questions.map(q => `<li>${q}</li>`).join('');
+        followupSection.classList.remove('hidden');
+    } else {
+        followupSection.classList.add('hidden');
+    }
+
+    const notesEl = document.getElementById('ai-notes');
+    if (parsed.note) {
+        notesEl.textContent = parsed.note;
+        notesEl.classList.remove('hidden');
+    } else {
+        notesEl.classList.add('hidden');
+    }
+}
+
+function handleAiUseData() {
+    if (!aiCurrentParsed) return;
+
+    const v = aiCurrentParsed.valori_per_100g || {};
+    const foodData = {
+        name: aiCurrentParsed.alimento || 'Pasto da foto',
+        calories: v.calorie || 0,
+        proteins: v.proteine || 0,
+        carbs: v.carboidrati || 0,
+        fats: v.grassi || 0,
+        fibers: v.fibre || 0,
+    };
+
+    selectedFood = foodData;
+    document.getElementById('food-search').value = foodData.name;
+    document.getElementById('meal-quantity').value = aiCurrentParsed.quantita_stimata_g || 100;
+
+    if (isCustomMealMode) {
+        toggleCustomMealForm();
+    }
+
+    updateMealPreview();
+    closeAiPhotoModal();
+    showToast(`Dati di "${foodData.name}" importati dall'AI.`);
+    document.getElementById('meal-quantity').focus();
+}
+
+function showAiError(message) {
+    document.getElementById('ai-error-message').textContent = message;
+    document.getElementById('ai-error').classList.remove('hidden');
 }

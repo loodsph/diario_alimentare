@@ -141,6 +141,10 @@
                                 </div>
                                 <div id="search-results" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full hidden"></div>
                             </div>
+                            <button id="ai-photo-btn" type="button" class="mt-3 w-full btn-modern text-white !py-2 text-sm flex items-center justify-center gap-2" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);" aria-label="Analizza foto con AI">
+                                <i class="fas fa-camera"></i>
+                                Analizza foto con AI
+                            </button>
                         </div>
                         <div id="custom-meal-container" class="meal-form-section space-y-4 hidden">
                             <input type="text" id="custom-meal-name" class="input-modern w-full" placeholder="Nome pasto personalizzato">
@@ -645,6 +649,101 @@
         </div>
     </div>
     <input type="file" id="barcode-file-input" class="hidden" accept="image/*">
+
+    <!-- Modal Analisi Foto AI -->
+    <div id="ai-photo-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="ai-photo-title">
+        <div class="modal-content p-8 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="ai-photo-title" class="text-2xl font-bold text-white flex items-center gap-3">
+                    <i class="fas fa-camera-retro text-purple-400"></i>
+                    Analizza Foto AI
+                </h3>
+                <button id="close-ai-photo-btn" class="text-white hover:text-slate-300" aria-label="Chiudi">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+
+            <!-- Sezione API Key (visibile solo se non salvata) -->
+            <div id="ai-api-key-section" class="hidden mb-6 p-4 bg-amber-900/30 border border-amber-700/50 rounded-xl">
+                <p class="text-amber-300 text-sm mb-3">
+                    <i class="fas fa-key mr-2"></i>
+                    Inserisci la tua API key di Google AI Studio per usare questa funzione.
+                </p>
+                <div class="flex gap-2">
+                    <input type="password" id="gemini-api-key-input" class="input-modern flex-1 text-sm" placeholder="AIza...">
+                    <button id="save-api-key-btn" class="btn-modern btn-primary !py-2 !px-4 text-sm">Salva</button>
+                </div>
+                <p class="text-slate-500 text-xs mt-2">La chiave viene salvata solo sul tuo dispositivo.</p>
+            </div>
+
+            <!-- Area upload foto -->
+            <div id="ai-photo-upload-area" class="mb-6">
+                <div id="ai-photo-drop-zone" class="relative border-2 border-dashed border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-purple-500 transition-colors">
+                    <input type="file" id="ai-photo-input" accept="image/*" capture="environment" class="absolute inset-0 opacity-0 cursor-pointer">
+                    <div id="ai-photo-placeholder">
+                        <i class="fas fa-camera text-4xl text-slate-500 mb-3"></i>
+                        <p class="text-slate-400">Tocca per scattare una foto o carica un'immagine</p>
+                        <p class="text-slate-500 text-sm mt-1">JPG, PNG, WebP</p>
+                    </div>
+                    <img id="ai-photo-preview" class="hidden max-h-64 mx-auto rounded-lg object-contain pointer-events-none">
+                </div>
+            </div>
+
+            <!-- Bottone Analizza -->
+            <button id="ai-analyze-btn" class="btn-modern w-full mb-6 hidden text-white" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+                <i class="fas fa-magic mr-2"></i>
+                Analizza con Gemini
+            </button>
+
+            <!-- Stato di caricamento -->
+            <div id="ai-loading" class="hidden text-center py-6">
+                <div class="loader mb-4"></div>
+                <p class="text-slate-400">Gemini sta analizzando il tuo pasto...</p>
+            </div>
+
+            <!-- Risultati -->
+            <div id="ai-results" class="hidden">
+                <div class="bg-slate-800/50 rounded-xl p-4 mb-4">
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 id="ai-food-name" class="text-lg font-bold text-slate-100"></h4>
+                        <span id="ai-confidence-badge" class="text-xs px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0"></span>
+                    </div>
+                    <p id="ai-food-quantity" class="text-slate-400 text-sm"></p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-4" id="ai-macros-grid"></div>
+
+                <!-- Domande di chiarimento -->
+                <div id="ai-followup-section" class="hidden mb-4">
+                    <div class="bg-indigo-900/30 border border-indigo-700/50 rounded-xl p-4">
+                        <p class="text-indigo-300 font-semibold mb-2">
+                            <i class="fas fa-question-circle mr-2"></i>
+                            Gemini ha alcune domande per essere più preciso:
+                        </p>
+                        <ul id="ai-questions-list" class="text-slate-300 text-sm space-y-1 mb-4 list-disc list-inside"></ul>
+                        <textarea id="ai-user-answer" class="input-modern w-full text-sm" rows="2" placeholder="La tua risposta..."></textarea>
+                        <button id="ai-refine-btn" class="btn-modern btn-primary w-full mt-3 !py-2 text-sm">
+                            <i class="fas fa-sync mr-2"></i>
+                            Aggiorna stima
+                        </button>
+                    </div>
+                </div>
+
+                <p id="ai-notes" class="text-slate-500 text-xs mb-4 hidden italic"></p>
+
+                <button id="ai-use-data-btn" class="btn-modern btn-success w-full !py-4 text-lg">
+                    <i class="fas fa-check-circle mr-2"></i>
+                    Usa questi dati
+                </button>
+            </div>
+
+            <!-- Errore -->
+            <div id="ai-error" class="hidden bg-red-900/30 border border-red-700/50 rounded-xl p-4 text-red-300 text-sm">
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                <span id="ai-error-message"></span>
+            </div>
+        </div>
+    </div>
 
     <div id="toast" class="toast fixed bottom-8 left-8 p-4 rounded-2xl opacity-0 transform translate-y-10 transition-all duration-500 z-50 flex items-center gap-3" role="alert" aria-live="assertive">
         <div class="w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center">
