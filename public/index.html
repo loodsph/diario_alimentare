@@ -108,6 +108,10 @@
                 </h2>
                 
                 <div class="space-y-6">
+                    <div id="recent-portions-container" class="hidden">
+                        <p class="text-sm font-semibold text-slate-300 mb-3">Usati di recente <span class="text-slate-400 font-normal">· su questo dispositivo</span></p>
+                        <div id="recent-portions" class="portion-recent-list"></div>
+                    </div>
                     <!-- Pasti Preferiti -->
                     <div id="favorite-meals-container" class="hidden">
                         <button id="favorite-meals-toggle" class="w-full text-left flex items-center justify-between p-4 bg-slate-800/50 rounded-lg hover:bg-slate-700/50 transition-colors">
@@ -171,11 +175,42 @@
                                 <option value="🍪 Spuntino">🍪 Spuntino</option>
                             </select>
                         </div>
-                        <div>
-                            <label for="meal-quantity" class="block text-sm font-semibold text-slate-300 mb-3">Quantità (g)</label>
-                            <input type="number" id="meal-quantity" class="input-modern w-full" placeholder="es. 100g">
-                        </div>
                     </div>
+
+                    <fieldset class="portion-panel">
+                        <legend class="text-lg font-semibold text-slate-200">Quanto ne hai mangiato?</legend>
+                        <div class="portion-fields">
+                            <div>
+                                <label for="portion-unit" class="block text-sm text-slate-300 mb-2">Misura</label>
+                                <select id="portion-unit" class="input-modern w-full">
+                                    <option value="g">Grammi</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="meal-quantity" id="meal-quantity-label" class="block text-sm text-slate-300 mb-2">Quantità in grammi</label>
+                                <input type="number" id="meal-quantity" class="input-modern w-full" min="0.01" step="any" inputmode="decimal" placeholder="Inserisci quantità" aria-describedby="portion-hint">
+                            </div>
+                        </div>
+                        <div id="portion-shortcuts" class="portion-shortcuts" role="group" aria-label="Frazioni rapide"></div>
+                        <p id="portion-hint" class="text-sm text-slate-300 mt-3" aria-live="polite">Seleziona un alimento per scegliere la porzione.</p>
+                        <details id="portion-help" class="mt-4">
+                            <summary class="text-sm text-indigo-300 cursor-pointer">Non so il peso / usa fette, pezzi o vasetti</summary>
+                            <p class="text-sm text-slate-300 mt-3">Hai una confezione? Usa il peso netto in etichetta e la frazione che hai mangiato. Per una ricetta, scegli le porzioni o una parte della preparazione.</p>
+                            <p class="text-sm text-slate-400 mt-2">Per fette, pezzi, cucchiai o bicchieri, definisci una misura per questo alimento: ricava il peso dall’etichetta o pesala una volta. I ml non vengono convertiti automaticamente in grammi. Per un piatto senza riferimenti puoi usare la foto AI e verificare la stima.</p>
+                            <div class="portion-fields mt-3">
+                                <div>
+                                    <label for="custom-portion-label" class="block text-sm text-slate-300 mb-2">La tua misura</label>
+                                    <input id="custom-portion-label" class="input-modern w-full" maxlength="60" placeholder="es. fetta, vasetto, cucchiaio">
+                                </div>
+                                <div>
+                                    <label for="custom-portion-grams" class="block text-sm text-slate-300 mb-2">Peso di una unità (g)</label>
+                                    <input id="custom-portion-grams" type="number" min="0.01" step="any" inputmode="decimal" class="input-modern w-full" placeholder="Dall’etichetta o bilancia">
+                                </div>
+                            </div>
+                            <p id="portion-unit-error" class="text-sm text-red-400 mt-2" role="alert"></p>
+                            <button id="save-portion-unit" type="button" class="portion-chip mt-3">Usa questa misura</button>
+                        </details>
+                    </fieldset>
                     
                     <div id="meal-preview" class="hidden mt-4 p-4 bg-slate-800/50 rounded-xl text-sm text-slate-300 space-y-2 transition-all duration-300">
                         <div class="flex justify-between items-center mb-2">
@@ -432,7 +467,12 @@
                                         <input type="text" id="recipe-name" class="input-modern w-full" placeholder="Nome ricetta">
                                         <div>
                                             <label for="recipe-servings" class="block text-sm font-semibold text-slate-300 mb-3">Numero di Porzioni</label>
-                                            <input type="number" id="recipe-servings" class="input-modern w-full" placeholder="es. 4" value="1">
+                                            <input type="number" id="recipe-servings" min="0.01" step="any" inputmode="decimal" class="input-modern w-full" placeholder="es. 4" value="1">
+                                        </div>
+                                        <div>
+                                            <label for="recipe-final-weight" class="block text-sm font-semibold text-slate-300 mb-3">Peso finale della preparazione (g, facoltativo)</label>
+                                            <input type="number" id="recipe-final-weight" min="0.01" step="any" inputmode="decimal" class="input-modern w-full" placeholder="Dopo la cottura, senza recipiente">
+                                            <p class="text-sm text-slate-400 mt-2">Serve se vuoi pesare il piatto cotto. Senza questo dato, usa il numero di porzioni o una frazione della ricetta.</p>
                                         </div>
                                         
                                         <div>
@@ -709,6 +749,9 @@
                         <span id="ai-confidence-badge" class="text-xs px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0"></span>
                     </div>
                     <p id="ai-food-quantity" class="text-slate-400 text-sm"></p>
+                    <label for="ai-quantity-correction" class="block text-sm text-slate-300 mt-3 mb-2">Correggi la quantità stimata (g)</label>
+                    <input id="ai-quantity-correction" type="number" min="0.01" step="any" inputmode="decimal" class="input-modern w-full">
+                    <p class="text-xs text-slate-400 mt-2">La foto produce una stima: verifica quantità, ingredienti e condimenti. Il diario conserverà l’indicazione “Stima da foto”.</p>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3 mb-4" id="ai-macros-grid"></div>
@@ -741,6 +784,13 @@
             <div id="ai-error" class="hidden bg-red-900/30 border border-red-700/50 rounded-xl p-4 text-red-300 text-sm">
                 <i class="fas fa-exclamation-triangle mr-2"></i>
                 <span id="ai-error-message"></span>
+            </div>
+
+            <!-- Cambia chiave -->
+            <div class="mt-6 pt-4 border-t border-slate-700/50 text-center">
+                <button id="ai-reset-key-btn" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                    <i class="fas fa-key mr-1"></i>Cambia API key
+                </button>
             </div>
         </div>
     </div>
@@ -829,10 +879,10 @@
                 </div>
                 <div id="edit-custom-meal-fields" class="hidden space-y-4">
                     <div class="grid grid-cols-2 gap-4">
-                        <input type="number" id="edit-meal-calories" class="input-modern w-full" placeholder="Calorie totali">
-                        <input type="number" id="edit-meal-proteins" class="input-modern w-full" placeholder="Proteine (g)">
-                        <input type="number" id="edit-meal-carbs" class="input-modern w-full" placeholder="Carboidrati (g)">
-                        <input type="number" id="edit-meal-fats" class="input-modern w-full" placeholder="Grassi (g)">
+                        <input type="number" id="edit-meal-calories" class="input-modern w-full" placeholder="Calorie per 100 g" aria-label="Calorie per 100 grammi">
+                        <input type="number" id="edit-meal-proteins" class="input-modern w-full" placeholder="Proteine per 100 g" aria-label="Proteine per 100 grammi">
+                        <input type="number" id="edit-meal-carbs" class="input-modern w-full" placeholder="Carboidrati per 100 g" aria-label="Carboidrati per 100 grammi">
+                        <input type="number" id="edit-meal-fats" class="input-modern w-full" placeholder="Grassi per 100 g" aria-label="Grassi per 100 grammi">
                     </div>
                 </div>
                 <div>

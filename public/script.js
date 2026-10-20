@@ -8,6 +8,8 @@ import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
 import { firebaseConfig } from './firebase-config.js';
 import { startScanner, stopScanner, handleCameraChange, toggleFlash, handleFileSelect } from './modules/scanner.js';
 import { getGeminiApiKey, saveGeminiApiKey, analyzePhoto, refineWithAnswer, parseResponse } from './modules/aiPhotoAnalysis.js';
+import { createPortionPicker } from './modules/portionPicker.js';
+import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
 // Le variabili sono raggruppate per responsabilità per facilitare la navigazione.
@@ -47,6 +49,7 @@ let waterHistory = {};
 
 // Stato UI e form
 let selectedFood = null;
+let portionPicker = null;
 let isCustomMealMode = false;
 let mealToEditId = null;
 let foodToEditId = null;
@@ -204,6 +207,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // --- GESTIONE EVENTI ---
 
 function setupListeners() {
+    portionPicker = createPortionPicker(document, updateMealPreview);
     // Dichiaro le variabili per gli input qui per evitare errori di riferimento
     const foodSearchInput = document.getElementById('food-search');
 
@@ -234,7 +238,6 @@ function setupListeners() {
     document.getElementById('add-to-favorites-btn').addEventListener('click', addToFavorites);
 
     // Modale di conferma generico
-    document.getElementById('meal-quantity').addEventListener('input', updateMealPreview);
     document.getElementById('save-edit-meal-btn').addEventListener('click', saveMealChanges);
     document.getElementById('cancel-edit-meal-btn').addEventListener('click', () => {
         document.getElementById('edit-meal-modal').classList.add('hidden');
@@ -279,6 +282,12 @@ function setupListeners() {
     document.getElementById('ai-analyze-btn').addEventListener('click', handleAiAnalyze);
     document.getElementById('ai-refine-btn').addEventListener('click', handleAiRefine);
     document.getElementById('ai-use-data-btn').addEventListener('click', handleAiUseData);
+    document.getElementById('ai-reset-key-btn').addEventListener('click', handleAiResetKey);
+    document.getElementById('ai-quantity-correction').addEventListener('change', event => {
+        if (!aiCurrentParsed) return;
+        aiCurrentParsed.quantita_stimata_g = Number(event.target.value);
+        renderAiResults(aiCurrentParsed);
+    });
 
     // Search functionality setup
     const searchResultsContainer = document.getElementById('search-results');
@@ -287,27 +296,16 @@ function setupListeners() {
         resultsContainer: searchResultsContainer,
         searchFunction: searchFoodsAndRecipes,
         onResultClick: (item) => {
-            selectedFood = item;
-            foodSearchInput.value = item.name;
-            const quantityInput = document.getElementById('meal-quantity');
-            if (item.isRecipe) {
-                const servingWeight = item.totalWeight / item.servings;
-                quantityInput.value = servingWeight.toFixed(0);
-            } else {
-                quantityInput.value = 100;
-            }
-            quantityInput.focus();
-            updateMealPreview();
+            selectMealFood(item);
         },
         itemRenderer: (item) => {
             if (item.isRecipe) {
-                const servingWeight = (item.totalWeight / item.servings).toFixed(0);
                 return `
                 <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
                     <i class="fas fa-book text-orange-400 mr-3"></i>
                     <div>
                         <div class="font-medium text-slate-200">${item.name}</div>
-                        <div class="text-sm text-slate-400">Ricetta - 1 porzione (~${servingWeight}g)</div>
+                        <div class="text-sm text-slate-400">Ricetta · ${item.servings} porzioni${positive(item.finalWeight) ? ` · ${formatAmount(item.finalWeight / item.servings)} g ciascuna` : ' · scegli la tua frazione'}</div>
                     </div>
                 </div>`;
             }
@@ -320,6 +318,13 @@ function setupListeners() {
                 </div>
             </div>`;
         }
+    });
+
+    foodSearchInput.addEventListener('input', () => {
+        // A newly typed name must never reuse the previously selected food.
+        selectedFood = null;
+        portionPicker.select();
+        updateMealPreview();
     });
 
     // Food search input focus/blur effects
@@ -552,7 +557,7 @@ function toggleCustomMealForm() {
         customContainer.classList.add('active');
         customContainer.classList.remove('hidden');
         toggleText.textContent = 'Cerca alimento';
-        quantityInput.value = 100; // Imposta un valore di default
+        quantityInput.value = '';
         quantityInput.disabled = false;
         selectedFood = null; // Deseleziona qualsiasi alimento
         document.getElementById('food-search').value = '';
@@ -567,6 +572,7 @@ function toggleCustomMealForm() {
         quantityInput.disabled = false;
         quantityInput.value = '';
     }
+    portionPicker.select();
 }
 
 
@@ -699,7 +705,12 @@ async function saveNutritionGoals() {
 async function addMeal() {
     if (!isOnline) return showToast("Sei offline. Impossibile aggiungere.", true);
     
-    const quantity = parseFloat(document.getElementById('meal-quantity').value);
+    const quantity = portionPicker.quantity();
+    if (!positive(quantity)) return showToast('Inserisci una quantità maggiore di zero.', true);
+    const foodSnapshot = selectedFood;
+    const portionSnapshot = portionPicker.metadata();
+    const customUnitSnapshot = portionPicker.customUnit();
+    const userSnapshot = userId;
     const mealType = document.getElementById('meal-type').value;
     let mealData;
 
@@ -711,8 +722,8 @@ async function addMeal() {
         const fats = parseFloat(document.getElementById('custom-meal-fats').value);
         const saveAsNewFood = document.getElementById('save-custom-meal-as-food').checked;
 
-        if (!name || isNaN(calories) || isNaN(proteins) || isNaN(carbs) || isNaN(fats)) {
-            return showToast('Compila tutti i campi del pasto personalizzato.', true);
+        if (!name || ![calories, proteins, carbs, fats].every(value => Number.isFinite(value) && value >= 0)) {
+            return showToast('Inserisci nome e valori nutrizionali validi, maggiori o uguali a zero.', true);
         }
 
         // I valori inseriti sono per 100g, la quantità è il moltiplicatore.
@@ -745,26 +756,12 @@ async function addMeal() {
             return showToast('Seleziona un alimento e inserisci una quantità valida.', true);
         }
 
-        // Se l'alimento selezionato è una ricetta, gestiscila in modo specifico
-        if (selectedFood.isRecipe) {
-            const { totalNutrition, totalWeight, servings, name } = selectedFood;
-            const nutritionPer100g = {
-                calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
-                proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
-                carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
-                fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
-                fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
-            };
-            
-            // Sovrascrivi selectedFood con i dati per 100g, così il resto della funzione non cambia
-            selectedFood = {
-                ...nutritionPer100g,
-                name: `${name} (1 porzione)`,
-                recipeId: selectedFood.id
-            };
+        try {
+            mealData = { ...selectedFood, ...nutritionPer100g(selectedFood), quantity, type: mealType, isCustom: false,
+                recipeId: selectedFood.isRecipe ? selectedFood.id : selectedFood.recipeId || null };
+        } catch (error) {
+            return showToast(error.message, true);
         }
-
-        mealData = { ...selectedFood, quantity, type: mealType, isCustom: false };
     }
 
     if (!mealData) {
@@ -799,7 +796,12 @@ async function addMeal() {
             type: mealData.type,
             date: Timestamp.fromDate(mealDate),
             sortIndex: sortIndex,
-            recipeId: mealData.recipeId || null
+            recipeId: mealData.recipeId || null,
+            foodId: foodSnapshot && !foodSnapshot.isRecipe ? foodSnapshot.foodId || foodSnapshot.id || null : null,
+            portion: portionSnapshot,
+            customUnit: customUnitSnapshot,
+            estimated: Boolean(foodSnapshot?.estimated),
+            isCustom: mealData.isCustom
         };
 
         if (mealData.isCustom) {
@@ -817,9 +819,12 @@ async function addMeal() {
             docToAdd.fats = mealData.fats || 0;
             docToAdd.fibers = mealData.fibers || 0;
         }
-        await addDoc(collection(db, `users/${userId}/meals`), docToAdd);
+        await addDoc(collection(db, `users/${userSnapshot}/meals`), docToAdd);
+        const foodToRemember = foodSnapshot || { name: mealData.name, ...nutritionPer100g(mealData) };
+        rememberPortion(localStorage, userSnapshot, foodToRemember, quantity, docToAdd.portion, docToAdd.customUnit);
+        renderRecentPortions();
         showToast('Pasto aggiunto al diario!');
-        resetAddMealForm();
+        if (selectedFood === foodSnapshot && portionPicker.quantity() === quantity) resetAddMealForm();
     } catch (error) {
         console.error("Errore aggiunta pasto:", error);
         showToast("Si è verificato un errore.", true);
@@ -830,6 +835,45 @@ async function addMeal() {
 }
 
 // --- FUNZIONI PASTI PREFERITI ---
+
+function escapeText(value) {
+    return String(value).replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+}
+
+function selectMealFood(food, saved = null) {
+    if (isCustomMealMode) toggleCustomMealForm();
+    selectedFood = food;
+    document.getElementById('food-search').value = food.name;
+    document.getElementById('search-results').classList.add('hidden');
+    const previous = saved || readPortionHistory(localStorage, userId).find(entry => entry.key === foodKey(food));
+    portionPicker.select(food, previous);
+    updateMealPreview();
+}
+
+function renderRecentPortions() {
+    const entries = readPortionHistory(localStorage, userId).slice(0, 6);
+    const container = document.getElementById('recent-portions-container');
+    const list = document.getElementById('recent-portions');
+    list.replaceChildren();
+    container.classList.toggle('hidden', entries.length === 0);
+    entries.forEach(entry => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'portion-chip';
+        const name = document.createElement('span');
+        name.className = 'block font-semibold';
+        name.textContent = entry.food.name;
+        const detail = document.createElement('span');
+        detail.className = 'block text-xs text-slate-300 mt-1';
+        detail.textContent = portionDescription(entry.portion) || `${formatAmount(entry.quantity)} g`;
+        button.append(name, detail);
+        button.addEventListener('click', () => {
+            const currentRecipe = entry.food.isRecipe && recipes.find(recipe => recipe.id === entry.food.id);
+            selectMealFood(currentRecipe ? { ...currentRecipe, isRecipe: true } : entry.food, entry);
+        });
+        list.appendChild(button);
+    });
+}
 
 function updateFavoriteMealsUI() {
     const container = document.getElementById('favorite-meals-container');
@@ -855,41 +899,29 @@ function updateFavoriteMealsUI() {
             removeFavoriteMeal(meal.id);
         };
 
-        button.innerHTML = `
-            <div class="flex justify-between items-center w-full">
-                <div class="font-medium overflow-hidden text-ellipsis whitespace-nowrap flex-1 mr-2">${meal.name}</div>
-                <div id="remove-btn-${meal.id}"></div>
-            </div>
-        `;
+        const label = document.createElement('span');
+        label.className = 'block';
+        label.textContent = meal.name;
+        const detail = document.createElement('span');
+        detail.className = 'block text-sm text-slate-300 mt-1';
+        detail.textContent = portionDescription(meal.portion) || (positive(meal.quantity) ? `${formatAmount(meal.quantity)} g` : 'Scegli la quantità');
+        button.append(label, detail);
         button.onclick = () => selectFavoriteMeal(meal);
-        buttonsContainer.appendChild(button);
-
-        // Aggiungi il bottone di rimozione nel contenitore dedicato
-        document.getElementById(`remove-btn-${meal.id}`).appendChild(removeBtn);
+        // Keep the removal button outside the selection button for keyboard access.
+        removeBtn.setAttribute('aria-label', `Rimuovi ${meal.name} dai preferiti`);
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2';
+        row.append(button, removeBtn);
+        buttonsContainer.appendChild(row);
     });
 }
 
 function selectFavoriteMeal(meal) {
-    selectedFood = {
-        name: meal.name,
-        calories: meal.calories,
-        proteins: meal.proteins,
-        carbs: meal.carbs,
-        fats: meal.fats,
-        fibers: meal.fibers,
-        recipeId: meal.recipeId || null
-    };
-
-    document.getElementById('food-search').value = meal.name;
-    document.getElementById('search-results').classList.add('hidden');
-
-    const quantityInput = document.getElementById('meal-quantity');
-    if (!quantityInput.value) {
-        quantityInput.value = '100';
+    if (meal.recipeId) {
+        const recipe = recipes.find(item => item.id === meal.recipeId);
+        if (recipe) return selectMealFood({ ...recipe, isRecipe: true }, meal);
     }
-
-    updateMealPreview();
-    showToast(`Selezionato: ${meal.name}`);
+    selectMealFood({ ...meal, id: meal.foodId || undefined, isRecipe: false }, meal);
 }
 
 function toggleFavoriteMeals() {
@@ -910,27 +942,34 @@ async function addToFavorites() {
         showToast('Seleziona prima un alimento', true);
         return;
     }
+    const quantity = portionPicker.quantity();
+    if (!positive(quantity)) return showToast('Scegli una quantità prima di salvare il preferito.', true);
 
-    // Controlla se è già nei preferiti
-    if (favoriteMeals.some(meal => meal.name === selectedFood.name)) {
-        showToast('Questo pasto è già nei preferiti', true);
-        return;
-    }
+    const existingFavorite = favoriteMeals.find(meal => meal.name === selectedFood.name);
 
     try {
         const favoriteData = {
             name: selectedFood.name,
-            calories: selectedFood.calories || 0,
-            proteins: selectedFood.proteins || 0,
-            carbs: selectedFood.carbs || 0,
-            fats: selectedFood.fats || 0,
-            fibers: selectedFood.fibers || 0,
-            recipeId: selectedFood.recipeId || null,
-            createdAt: Timestamp.now()
+            ...nutritionPer100g(selectedFood),
+            recipeId: selectedFood.isRecipe ? selectedFood.id : selectedFood.recipeId || null,
+            foodId: selectedFood.isRecipe ? null : selectedFood.foodId || selectedFood.id || null,
+            quantity,
+            portion: portionPicker.metadata(),
+            customUnit: portionPicker.customUnit(),
+            servingGrams: selectedFood.servingGrams || null,
+            servingLabel: selectedFood.servingLabel || null,
+            packageGrams: selectedFood.packageGrams || null,
+            barcode: selectedFood.barcode || null,
+            estimated: Boolean(selectedFood.estimated),
+            createdAt: existingFavorite?.createdAt || Timestamp.now()
         };
 
-        await addDoc(collection(db, `users/${userId}/favoriteMeals`), favoriteData);
-        showToast(`${selectedFood.name} aggiunto ai preferiti!`);
+        if (existingFavorite) {
+            await updateDoc(doc(db, `users/${userId}/favoriteMeals`, existingFavorite.id), favoriteData);
+        } else {
+            await addDoc(collection(db, `users/${userId}/favoriteMeals`), favoriteData);
+        }
+        showToast(existingFavorite ? 'Porzione preferita aggiornata!' : `${selectedFood.name} aggiunto ai preferiti!`);
     } catch (error) {
         console.error("Errore aggiunta preferito:", error);
         showToast("Errore nell'aggiungere ai preferiti", true);
@@ -970,11 +1009,16 @@ async function saveMealChanges() {
     const newType = document.getElementById('edit-meal-type').value;
     const mealRef = doc(db, `users/${userId}/meals`, mealToEditId);
     const mealToEdit = allMeals.find(m => m.id === mealToEditId);
+    if (!mealToEdit) return showToast('Pasto non trovato.', true);
+    if (!newName || !positive(newQuantity)) return showToast('Inserisci un nome e una quantità maggiore di zero.', true);
     
     let dataToUpdate = {
         name: newName,
         type: newType,
-        date: getMealTimestamp(newType, selectedDate)
+        date: getMealTimestamp(newType, selectedDate),
+        quantity: newQuantity,
+        portion: newQuantity === mealToEdit.quantity ? mealToEdit.portion || null
+            : { unitId: 'g', label: 'Grammi', amount: newQuantity, gramsPerUnit: 1, source: 'Peso modificato' }
     };
 
     if (mealToEdit.isCustom) {
@@ -983,7 +1027,7 @@ async function saveMealChanges() {
         const carbs = parseFloat(document.getElementById('edit-meal-carbs').value);
         const fats = parseFloat(document.getElementById('edit-meal-fats').value);
 
-        if (!newName || isNaN(calories) || isNaN(proteins) || isNaN(carbs) || isNaN(fats)) {
+        if (![calories, proteins, carbs, fats].every(value => Number.isFinite(value) && value >= 0)) {
             return showToast('Compila tutti i campi del pasto personalizzato.', true);
         }
 
@@ -1137,9 +1181,12 @@ async function saveRecipe() {
     if (!isOnline) return showToast("Sei offline. Impossibile salvare.", true);
 
     const name = document.getElementById('recipe-name').value.trim();
-    const servings = parseInt(document.getElementById('recipe-servings').value) || 1;
+    const servings = Number(document.getElementById('recipe-servings').value);
+    const finalWeightInput = document.getElementById('recipe-final-weight').value;
+    const finalWeight = finalWeightInput === '' ? null : Number(finalWeightInput);
+    if (finalWeightInput !== '' && !positive(finalWeight)) return showToast('Inserisci un peso finale maggiore di zero.', true);
     if (!name) return showToast('Inserisci un nome per la ricetta.', true);
-    if (servings <= 0) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
+    if (!positive(servings)) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
     
     const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div'))
         .map(el => {
@@ -1205,6 +1252,7 @@ async function saveRecipe() {
             // Salva solo nome e quantità, l'ID non serve più dopo il calcolo
             ingredients: ingredients.map(({ name, quantity, foodId }) => ({ name, quantity, foodId })), 
             servings,
+            finalWeight,
             totalNutrition,
             totalWeight
         });
@@ -1228,9 +1276,12 @@ async function saveRecipeChanges() {
     if (!isOnline || !recipeToEditId) return;
 
     const name = document.getElementById('recipe-name').value.trim();
-    const servings = parseInt(document.getElementById('recipe-servings').value) || 1;
+    const servings = Number(document.getElementById('recipe-servings').value);
+    const finalWeightInput = document.getElementById('recipe-final-weight').value;
+    const finalWeight = finalWeightInput === '' ? null : Number(finalWeightInput);
+    if (finalWeightInput !== '' && !positive(finalWeight)) return showToast('Inserisci un peso finale maggiore di zero.', true);
     if (!name) return showToast('Inserisci un nome per la ricetta.', true);
-    if (servings <= 0) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
+    if (!positive(servings)) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
 
     const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div'))
         .map(el => {
@@ -1286,6 +1337,7 @@ async function saveRecipeChanges() {
             name_lowercase: name.toLowerCase(),
             ingredients: ingredients.map(({ name, quantity, foodId }) => ({ name, quantity, foodId })),
             servings,
+            finalWeight,
             totalNutrition,
             totalWeight
         });
@@ -1319,46 +1371,12 @@ async function deleteRecipe(recipeId) {
     });
 }
 
-async function useRecipe(recipeId) {
-    if (!isOnline) return showToast("Sei offline. Impossibile usare la ricetta.", true);
-    
+function useRecipe(recipeId) {
     const recipe = recipes.find(r => r.id === recipeId);
-    if (!recipe || !recipe.totalNutrition || !recipe.totalWeight) {
-        return showToast("Errore: Dati della ricetta incompleti. Prova a salvarla di nuovo.", true);
-    }
-
-    const mealType = document.getElementById('meal-type').value;
-    const mealDate = getMealTimestamp(mealType, selectedDate);
-
-    const { totalNutrition, totalWeight, servings, name } = recipe;
-
-    // Calcola i nutrienti per 100g della ricetta
-    const nutritionPer100g = {
-        calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
-        proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
-        carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
-        fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
-        fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
-    };
-
-    // Calcola il peso di una singola porzione
-    const servingWeight = totalWeight / servings;
-
-    try {
-        // Aggiunge un pasto con i dati per 100g della ricetta e la quantità pari al peso di una porzione
-        await addDoc(collection(db, `users/${userId}/meals`), {
-            name: `${name} (1 porzione)`,
-            ...nutritionPer100g,
-            quantity: servingWeight,
-            type: mealType,
-            date: Timestamp.fromDate(mealDate),
-            recipeId: recipe.id 
-        });
-        showToast(`1 porzione di "${name}" aggiunta al diario!`);
-    } catch (error) {
-        console.error("Errore aggiunta ricetta come pasto:", error);
-        showToast("Si è verificato un errore.", true);
-    }
+    if (!recipe) return showToast('Ricetta non trovata.', true);
+    selectMealFood({ ...recipe, isRecipe: true });
+    document.getElementById('add-meal-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showToast('Scegli quanto ne hai mangiato e aggiungi al diario.');
 }
 
 async function fetchFoodFromBarcode(barcode, callback) {
@@ -1393,7 +1411,7 @@ async function fetchFoodFromBarcode(barcode, callback) {
             'vitamin-a_100g': 'vitamina_a_retinolo_equivalente_mcg' // Verrà convertito in µg
         };
 
-        const foodData = { name: product_name || 'Nome non disponibile' };
+        const foodData = { name: product_name || 'Nome non disponibile', barcode, ...productPortions(data.product) };
 
         for (const [offKey, appKey] of Object.entries(nutrientMap)) {
             let value = nutriments[offKey] || 0;
@@ -1446,6 +1464,7 @@ function updateAllUI() {
     renderWeeklyHistory();
     updateCharts(dailyTotalsCache, selectedDate);
     updateFavoriteMealsUI();
+    renderRecentPortions();
 }
 
 function updateUserUI(user) {
@@ -1568,7 +1587,8 @@ function renderSelectedDayMeals() {
                 return `
                 <div class="meal-item is-entering flex flex-col md:flex-row md:items-center p-4" data-id="${meal.id}">
                     <div class="flex-1 min-w-0">
-                        <p class="font-medium text-slate-200 break-words">${meal.name} (${Number(meal.quantity) || 0}g)</p>
+                        <p class="font-medium text-slate-200 break-words">${escapeText(meal.name)}</p>
+                        <p class="text-sm text-slate-300 mt-1">${escapeText(portionDescription(meal.portion) || `${formatAmount(meal.quantity || 0)} g`)}${meal.estimated ? ' · Stima da foto' : ''}</p>
                         <p class="text-xs md:text-sm text-slate-400 mt-1 meal-nutrition-details">
                             Cal:${calculated.calories.toFixed(0)} P:${calculated.proteins.toFixed(1)}g C:${calculated.carbs.toFixed(1)}g G:${calculated.fats.toFixed(1)}g F:${calculated.fibers.toFixed(1)}g
                         </p>
@@ -1651,7 +1671,7 @@ function renderRecipes() {
                     </ul>
                     ${(recipe.totalNutrition && recipe.totalWeight && recipe.servings) ? `
                     <div class="mt-4 pt-4 border-t border-slate-700">
-                        <p class="font-semibold text-slate-300 mb-2">Per porzione (~${(recipe.totalWeight / recipe.servings).toFixed(0)}g):</p>
+                        <p class="font-semibold text-slate-300 mb-2">Per porzione${positive(recipe.finalWeight) ? ` (${formatAmount(recipe.finalWeight / recipe.servings)} g)` : ' · peso finale non registrato'}:</p>
                         <p class="text-sm text-slate-400">
                             Cal: ${(recipe.totalNutrition.calories / recipe.servings).toFixed(0)} | P: ${(recipe.totalNutrition.proteins / recipe.servings).toFixed(1)}g | C: ${(recipe.totalNutrition.carbs / recipe.servings).toFixed(1)}g | G: ${(recipe.totalNutrition.fats / recipe.servings).toFixed(1)}g | F: ${(recipe.totalNutrition.fibers / recipe.servings).toFixed(1)}g
                         </p>
@@ -1993,6 +2013,13 @@ function resetAppData() {
     if (waterUnsubscribe) { waterUnsubscribe(); waterUnsubscribe = null; }
     document.getElementById('saved-recipes').innerHTML = '';
     document.getElementById('weekly-history').innerHTML = '';
+    favoriteMeals = [];
+    selectedFood = null;
+    portionPicker.select();
+    document.getElementById('food-search').value = '';
+    updateMealPreview();
+    renderRecentPortions();
+    updateFavoriteMealsUI();
 }
 
 function showFoodLookupDetails(food) {
@@ -2223,8 +2250,9 @@ function openEditMealModal(mealId) {
     document.getElementById('edit-meal-name-input').value = meal.name;
     document.getElementById('edit-meal-type').value = meal.type;
 
+    standardFields.classList.remove('hidden');
+    document.getElementById('edit-meal-quantity').value = meal.quantity;
     if (meal.isCustom) {
-        standardFields.classList.add('hidden');
         customFields.classList.remove('hidden');
         document.getElementById('edit-meal-calories').value = meal.calories || '';
         document.getElementById('edit-meal-proteins').value = meal.proteins || '';
@@ -2468,6 +2496,7 @@ function resetAddMealForm() {
     quantityInput.value = '';
     quantityInput.disabled = false;
     selectedFood = null;
+    portionPicker.select();
     document.getElementById('search-results').style.display = 'none';
     updateMealPreview(); // Nasconde l'anteprima
     document.getElementById('food-search').focus();
@@ -2529,6 +2558,7 @@ async function openEditFoodModal() {
 function resetRecipeForm() {
     document.getElementById('recipe-name').value = '';
     document.getElementById('recipe-servings').value = '1';
+    document.getElementById('recipe-final-weight').value = '';
     const ingredientsContainer = document.getElementById('recipe-ingredients');
     ingredientsContainer.innerHTML = ''; // Svuota tutto
     addIngredientRow(); // Aggiunge la prima riga vuota
@@ -2545,6 +2575,7 @@ function openRecipeEditor(recipeId) {
     // Popola i campi del form
     document.getElementById('recipe-name').value = recipe.name;
     document.getElementById('recipe-servings').value = recipe.servings;
+    document.getElementById('recipe-final-weight').value = recipe.finalWeight || '';
 
     const ingredientsContainer = document.getElementById('recipe-ingredients');
     ingredientsContainer.innerHTML = ''; // Pulisci gli ingredienti esistenti
@@ -2953,7 +2984,7 @@ function updateRecipeBuilderMacroBar() {
 
 function updateMealPreview() {
     const previewContainer = document.getElementById('meal-preview');
-    const quantity = parseFloat(document.getElementById('meal-quantity').value);
+    const quantity = portionPicker.quantity();
 
     if (!selectedFood || isNaN(quantity) || quantity <= 0) {
         previewContainer.classList.add('hidden');
@@ -2963,19 +2994,9 @@ function updateMealPreview() {
     previewContainer.classList.remove('hidden');
 
     const ratio = quantity / 100;
-    let foodData = selectedFood;
-
-    // Se è una ricetta, ricalcola i valori per 100g prima di procedere
-    if (selectedFood.isRecipe) {
-        const { totalNutrition, totalWeight } = selectedFood;
-        foodData = {
-            calories: ((totalNutrition.calories || 0) / totalWeight) * 100,
-            proteins: ((totalNutrition.proteins || 0) / totalWeight) * 100,
-            carbs: ((totalNutrition.carbs || 0) / totalWeight) * 100,
-            fats: ((totalNutrition.fats || 0) / totalWeight) * 100,
-            fibers: ((totalNutrition.fibers || 0) / totalWeight) * 100,
-        };
-    }
+    let foodData;
+    try { foodData = nutritionPer100g(selectedFood); }
+    catch { previewContainer.classList.add('hidden'); return; }
 
     document.getElementById('preview-calories').textContent = ((foodData.calories || 0) * ratio).toFixed(0);
     document.getElementById('preview-proteins').textContent = `${((foodData.proteins || 0) * ratio).toFixed(1)} g`;
@@ -2986,22 +3007,15 @@ function updateMealPreview() {
     // Mostra/nascondi il bottone "Aggiungi ai preferiti" in base a se è già nei preferiti
     const addToFavoritesBtn = document.getElementById('add-to-favorites-btn');
     const isAlreadyFavorite = favoriteMeals.some(meal => meal.name === selectedFood.name);
-    if (isAlreadyFavorite) {
-        addToFavoritesBtn.classList.add('hidden');
-    } else {
-        addToFavoritesBtn.classList.remove('hidden');
-    }
+    addToFavoritesBtn.classList.remove('hidden');
+    addToFavoritesBtn.textContent = isAlreadyFavorite ? 'Aggiorna preferito' : 'Salva porzione preferita';
 }
 
 // --- Funzioni Scanner ---
 
 function populateMealForm(foodData) {
-    document.getElementById('food-search').value = foodData.name;
-    document.getElementById('meal-quantity').value = 100;
-    selectedFood = foodData;
+    selectMealFood(foodData);
     showToast(`Prodotto trovato: ${foodData.name}`);
-    document.getElementById('meal-quantity').focus();
-    updateMealPreview();
 }
 
 function populateNewFoodForm(foodData) {
@@ -3169,7 +3183,9 @@ function renderAiResults(parsed) {
 
     document.getElementById('ai-food-name').textContent = parsed.alimento || 'Alimento sconosciuto';
 
-    const qty = parsed.quantita_stimata_g || 0;
+    const qty = positive(parsed.quantita_stimata_g) ? Number(parsed.quantita_stimata_g) : 0;
+    document.getElementById('ai-quantity-correction').value = qty || '';
+    document.getElementById('ai-use-data-btn').disabled = !positive(qty);
     document.getElementById('ai-food-quantity').textContent = `Quantità stimata: ~${qty}g`;
 
     const badge = document.getElementById('ai-confidence-badge');
@@ -3178,7 +3194,7 @@ function renderAiResults(parsed) {
     badge.className = `text-xs px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0 ${badgeColors[conf] || badgeColors.bassa}`;
     badge.textContent = `Confidenza: ${conf}`;
 
-    const v = parsed.valori_per_100g || {};
+    const v = Object.fromEntries(Object.entries(parsed.valori_per_100g || {}).map(([key, value]) => [key, Number(value) * qty / 100]));
     const macros = [
         { label: 'Calorie', value: Math.round(v.calorie || 0), unit: 'kcal', color: 'text-red-400', icon: 'fa-fire-alt' },
         { label: 'Proteine', value: (v.proteine || 0).toFixed(1), unit: 'g', color: 'text-green-400', icon: 'fa-drumstick-bite' },
@@ -3192,7 +3208,7 @@ function renderAiResults(parsed) {
         <div class="bg-slate-800/50 rounded-lg p-3 text-center">
             <i class="fas ${m.icon} ${m.color} mb-1 text-sm"></i>
             <div class="font-bold text-slate-100">${m.value} <span class="text-xs text-slate-400">${m.unit}</span></div>
-            <div class="text-xs text-slate-500">${m.label} /100g</div>
+            <div class="text-xs text-slate-400">${m.label} nella porzione</div>
         </div>
     `).join('');
 
@@ -3200,7 +3216,7 @@ function renderAiResults(parsed) {
     const followupSection = document.getElementById('ai-followup-section');
     if (questions.length > 0) {
         const list = document.getElementById('ai-questions-list');
-        list.innerHTML = questions.map(q => `<li>${q}</li>`).join('');
+        list.innerHTML = questions.map(q => `<li>${escapeText(q)}</li>`).join('');
         followupSection.classList.remove('hidden');
     } else {
         followupSection.classList.add('hidden');
@@ -3226,17 +3242,11 @@ function handleAiUseData() {
         carbs: v.carboidrati || 0,
         fats: v.grassi || 0,
         fibers: v.fibre || 0,
+        estimated: true,
     };
 
-    selectedFood = foodData;
-    document.getElementById('food-search').value = foodData.name;
-    document.getElementById('meal-quantity').value = aiCurrentParsed.quantita_stimata_g || 100;
-
-    if (isCustomMealMode) {
-        toggleCustomMealForm();
-    }
-
-    updateMealPreview();
+    if (!positive(aiCurrentParsed.quantita_stimata_g)) return showToast('Inserisci una quantità valida per la stima.', true);
+    selectMealFood(foodData, { quantity: aiCurrentParsed.quantita_stimata_g });
     closeAiPhotoModal();
     showToast(`Dati di "${foodData.name}" importati dall'AI.`);
     document.getElementById('meal-quantity').focus();
@@ -3245,4 +3255,10 @@ function handleAiUseData() {
 function showAiError(message) {
     document.getElementById('ai-error-message').textContent = message;
     document.getElementById('ai-error').classList.remove('hidden');
+}
+
+function handleAiResetKey() {
+    saveGeminiApiKey('');
+    closeAiPhotoModal();
+    openAiPhotoModal();
 }

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="it">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NutriTrack · prova locale delle porzioni</title>
+<link rel="stylesheet" href="../public/style.css">
+<body>
+<main style="max-width:420px;margin:24px auto;padding:12px">
+    <p class="text-sm text-slate-300 mb-4">Anteprima locale · dati di esempio, nessun salvataggio online</p>
+    <div id="preview"></div>
+    <p id="test-result" class="text-sm text-slate-200 mt-3" role="status"></p>
+</main>
+<script type="module">
+    import { createPortionPicker } from '../public/modules/portionPicker.js';
+    import { nutritionPer100g, formatAmount, portionDescription } from '../public/modules/portions.js';
+    const html = await (await fetch('../public/index.html')).text();
+    const source = new DOMParser().parseFromString(html, 'text/html');
+    document.getElementById('preview').append(document.importNode(source.getElementById('add-meal-card'), true));
+    const foods = [
+        { name: 'Yogurt · vasetto da 125 g', calories: 60, servingGrams: 125, servingLabel: 'Vasetti', packageGrams: 125 },
+        { name: 'Ricetta · 4 porzioni', isRecipe: true, servings: 4, totalWeight: 500, finalWeight: 1000, totalNutrition: { calories: 1200, proteins: 40, carbs: 160, fats: 44 } },
+        { name: 'Pane · definisci la tua fetta', calories: 250, proteins: 9, carbs: 45, fats: 3 }
+    ];
+    let food = foods[0];
+    const picker = createPortionPicker(document, update);
+    function update() {
+        const quantity = picker.quantity();
+        const valid = Number.isFinite(quantity) && quantity > 0;
+        document.getElementById('meal-preview').classList.toggle('hidden', !valid);
+        if (!valid) return;
+        const values = nutritionPer100g(food);
+        for (const key of ['calories', 'proteins', 'carbs', 'fats', 'fibers']) {
+            document.getElementById(`preview-${key}`).textContent = formatAmount(values[key] * quantity / 100);
+        }
+    }
+    document.getElementById('recent-portions-container').classList.remove('hidden');
+    document.getElementById('recent-portions-container').firstElementChild.textContent = 'Scegli un esempio per provare';
+    foods.forEach(item => {
+        const button = document.createElement('button');
+        button.className = 'portion-chip';
+        button.textContent = item.name;
+        button.onclick = () => { food = item; picker.select(food); document.getElementById('food-search').value = food.name; update(); };
+        document.getElementById('recent-portions').append(button);
+    });
+    document.getElementById('ai-photo-btn').classList.add('hidden');
+    document.getElementById('scan-barcode-btn').classList.add('hidden');
+    document.getElementById('toggle-custom-meal-btn').classList.add('hidden');
+    document.getElementById('add-meal-btn').onclick = () => {
+        document.getElementById('test-result').textContent = Number.isFinite(picker.quantity())
+            ? `Prova riuscita: ${portionDescription(picker.metadata())}. Nessun dato inviato.`
+            : 'Inserisci una quantità maggiore di zero.';
+    };
+    let saved = null;
+    document.getElementById('add-to-favorites-btn').onclick = () => {
+        saved = { portion: picker.metadata(), quantity: picker.quantity(), customUnit: picker.customUnit() };
+        document.getElementById('test-result').textContent = 'Porzione memorizzata per questa prova.';
+    };
+    const restore = document.createElement('button');
+    restore.className = 'portion-chip mt-3';
+    restore.textContent = 'Ripristina porzione di prova';
+    restore.onclick = () => { picker.select(food, saved); update(); };
+    document.getElementById('preview').append(restore);
+    picker.select(food);
+    document.getElementById('food-search').value = food.name;
+    update();
+</script>
+</body>
+</html>

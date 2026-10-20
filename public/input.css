@@ -2,6 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+.portion-panel {
+    padding: 1rem;
+    border: 1px solid #475569;
+    border-radius: 1rem;
+    background: rgba(30, 41, 59, .55);
+    min-width: 0;
+}
+.portion-panel legend { padding: 0 .4rem; }
+.portion-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; }
+.portion-fields > div { min-width: 0; }
+.portion-fields .input-modern { padding: .75rem; }
+.portion-shortcuts, .portion-recent-list { display: flex; flex-wrap: wrap; gap: .5rem; }
+.portion-shortcuts:not(:empty) { margin-top: .75rem; }
+.portion-chip {
+    border: 1px solid #64748b;
+    border-radius: .75rem;
+    padding: .65rem .85rem;
+    min-height: 44px;
+    background: #1e293b;
+    color: #e2e8f0;
+    font-size: .875rem;
+    text-align: left;
+}
+.portion-chip:hover, .portion-chip[aria-pressed="true"] { background: #3730a3; border-color: #a5b4fc; }
+.portion-chip:focus-visible, .portion-panel summary:focus-visible { outline: 2px solid #a5b4fc; outline-offset: 3px; }
+.portion-recent-list .portion-chip { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+#add-meal-card:hover { transform: none; }
+@media (max-width: 480px) {
+    .portion-fields { grid-template-columns: minmax(0, 1fr); }
+    #add-meal-card { padding: 1.25rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
 :root {
     --primary-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%);
     --secondary-gradient: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);
