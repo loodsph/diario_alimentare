@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Campi che l'app scrive sugli alimenti (addNewFood, addNewFoodFromData, saveFoodChanges)
+    function foodFields() {
+      return ['name', 'calories', 'proteins', 'carbs', 'fats', 'fibers', 'name_lowercase', 'search_tokens'];
+    }
+
+    function nonNegative(data, field) {
+      return data[field] is number && data[field] >= 0;
+    }
+
+    function validFood(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 200
+        && data.name_lowercase == data.name.lower()
+        && data.search_tokens is list && data.search_tokens.size() <= 50
+        && nonNegative(data, 'calories') && nonNegative(data, 'proteins')
+        && nonNegative(data, 'carbs') && nonNegative(data, 'fats')
+        && (!('fibers' in data) || nonNegative(data, 'fibers'));
+    }
+
+    // Database alimenti condiviso (CREA + alimenti aggiunti dagli utenti).
+    // Lettura e aggiunta per utenti autenticati; la modifica tocca solo i campi
+    // nutrizionali; la cancellazione non è consentita dal client.
+    match /foods/{foodId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(foodFields())
+        && validFood(request.resource.data);
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(foodFields())
+        && validFood(request.resource.data);
+      allow delete: if false;
+    }
+
+    // Dati personali: pasti, ricette, preferiti, acqua, obiettivi.
+    match /users/{uid}/{document=**} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Tutto il resto è chiuso.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

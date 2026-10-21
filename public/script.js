@@ -1,7 +1,7 @@
 // Importa le funzioni necessarie da Firebase SDK
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { debounce, getDayBounds, formatDate, getMealTimestamp, getTodayUTC } from './modules/utils.js';
 import { showToast, triggerFlashAnimation } from './modules/uiHelpers.js';
 import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
@@ -11,6 +11,8 @@ import { getGeminiApiKey, saveGeminiApiKey, analyzePhoto, refineWithAnswer, pars
 import { createMealEntry } from './modules/mealEntry.js';
 import { createPortionPicker } from './modules/portionPicker.js';
 import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js';
+import { emptyTotals, addTotals, mealNutrition, computeRecipeNutrition, findMissingIngredients, groupNutrientDetails, MAX_RECIPE_INGREDIENTS } from './modules/nutrition.js';
+import { searchTokens, sortResults, matchesSearch } from './modules/foodSearch.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
 // Le variabili sono raggruppate per responsabilità per facilitare la navigazione.
@@ -58,12 +60,6 @@ let recipeToEditId = null;
 let onConfirmAction = null;
 let ingredientCounter = 0;
 let currentRecipeIngredientResults = [];
-
-// Scanner barcode
-let html5QrCode = null;
-let availableCameras = [];
-let currentCameraIndex = 0;
-let onDecodeCallback = null;
 
 // Listener Firestore (unsubscribe functions)
 let mealsUnsubscribe = null;
@@ -132,7 +128,8 @@ function getDefaultMealTypeByTime() {
 window.addEventListener('DOMContentLoaded', () => {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    // Cache locale persistente: i dati già visti restano disponibili anche offline.
+    db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
     setupListeners();
 
     onAuthStateChanged(auth, async (user) => {
@@ -314,19 +311,19 @@ function setupListeners() {
         itemRenderer: (item) => {
             if (item.isRecipe) {
                 return `
-                <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
+                <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${escapeText(item.id)}">
                     <i class="fas fa-book text-orange-400 mr-3"></i>
                     <div>
-                        <div class="font-medium text-slate-200">${item.name}</div>
+                        <div class="font-medium text-slate-200">${escapeText(item.name)}</div>
                         <div class="text-sm text-slate-400">Ricetta · ${item.servings} porzioni${positive(item.finalWeight) ? ` · ${formatAmount(item.finalWeight / item.servings)} g ciascuna` : ' · scegli la tua frazione'}</div>
                     </div>
                 </div>`;
             }
             return `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${escapeText(item.id)}">
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
-                    <div class="font-medium text-slate-200">${item.name}</div>
+                    <div class="font-medium text-slate-200">${escapeText(item.name)}</div>
                     <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
                 </div>
             </div>`;
@@ -365,10 +362,10 @@ function setupListeners() {
             showFoodLookupDetails(item);
         },
         itemRenderer: (item) => `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${escapeText(item.id)}">
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
-                    <div class="font-medium text-slate-200">${item.name}</div>
+                    <div class="font-medium text-slate-200">${escapeText(item.name)}</div>
                     <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
                 </div>
             </div>
@@ -1103,9 +1100,7 @@ async function addNewFood() {
             }
         }
 
-        // Genera i token per la ricerca
-        const search_tokens = name.toLowerCase().split(/[\s,.;:()_/-]+/)
-                                  .filter(token => token.length > 0); // Rimuove eventuali token vuoti
+        const search_tokens = searchTokens(name);
 
         await addDoc(foodsCollectionRef, {
             name, calories, proteins, carbs, fats, fibers,
@@ -1139,7 +1134,7 @@ async function saveFoodChanges() {
     }
 
     const foodRef = doc(db, 'foods', foodToEditId);
-    const search_tokens = name.toLowerCase().split(/[\s,.;:()_/-]+/).filter(token => token.length > 0);
+    const search_tokens = searchTokens(name);
 
     const dataToUpdate = {
         name, calories, proteins, carbs, fats, fibers,
@@ -1178,7 +1173,7 @@ async function addNewFoodFromData(foodData) {
         const querySnapshot = await getDocs(q);
 
         if (querySnapshot.empty) {
-            const search_tokens = name.toLowerCase().split(/[\s,.;:()_/-]+/).filter(token => token.length > 0);
+            const search_tokens = searchTokens(name);
             await addDoc(foodsCollectionRef, {
                 name, calories, proteins, carbs, fats, fibers: fibers || 0,
                 name_lowercase: name.toLowerCase(),
@@ -1191,18 +1186,8 @@ async function addNewFoodFromData(foodData) {
     }
 }
 
-async function saveRecipe() {
-    if (!isOnline) return showToast("Sei offline. Impossibile salvare.", true);
-
-    const name = document.getElementById('recipe-name').value.trim();
-    const servings = Number(document.getElementById('recipe-servings').value);
-    const finalWeightInput = document.getElementById('recipe-final-weight').value;
-    const finalWeight = finalWeightInput === '' ? null : Number(finalWeightInput);
-    if (finalWeightInput !== '' && !positive(finalWeight)) return showToast('Inserisci un peso finale maggiore di zero.', true);
-    if (!name) return showToast('Inserisci un nome per la ricetta.', true);
-    if (!positive(servings)) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
-    
-    const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div'))
+function readRecipeIngredients() {
+    return Array.from(document.querySelectorAll('#recipe-ingredients > div'))
         .map(el => {
             const nameInput = el.querySelector('.recipe-ingredient-name');
             return {
@@ -1212,82 +1197,12 @@ async function saveRecipe() {
             };
         })
         .filter(ing => ing.name && ing.quantity > 0);
-
-    if (ingredients.length === 0) return showToast('Aggiungi almeno un ingrediente valido.', true);
-
-    if (ingredients.length > 30) {
-        return showToast('Una ricetta non può avere più di 30 ingredienti (limite del database).', true);
-    }
-
-    const saveBtn = document.getElementById('save-recipe-btn');
-    const originalBtnHTML = saveBtn.innerHTML;
-
-    try {
-        saveBtn.disabled = true;
-        saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Salvataggio...`;
-
-        // 1. Recupera i dati di tutti gli ingredienti con una sola query
-        const ingredientIds = ingredients.map(ing => ing.foodId).filter(id => id);
-        const foodDataMap = new Map();
-        if (ingredientIds.length > 0) {
-            const q = query(collection(db, 'foods'), where(documentId(), 'in', ingredientIds));
-            const snapshot = await getDocs(q);
-            snapshot.forEach(doc => foodDataMap.set(doc.id, doc.data()));
-        }
-
-        // 2. Verifica se tutti gli ingredienti sono stati trovati nel database
-        const missingIngredients = ingredients.filter(ing => !ing.foodId || !foodDataMap.has(ing.foodId));
-        if (missingIngredients.length > 0) {
-            const missingNames = missingIngredients.map(ing => ing.name).join(', ');
-            throw new Error(`Ingredienti non validi: ${missingNames}. Selezionali dalla lista per confermarli.`);
-        }
-
-        // 3. Calcola i totali nutrizionali e il peso totale
-        const { totalNutrition, totalWeight } = ingredients.reduce((acc, ing) => {
-            const foodData = foodDataMap.get(ing.foodId);
-            if (foodData) {
-                const ratio = ing.quantity / 100;
-                acc.totalNutrition.calories += (foodData.calories || 0) * ratio;
-                acc.totalNutrition.proteins += (foodData.proteins || 0) * ratio;
-                acc.totalNutrition.carbs += (foodData.carbs || 0) * ratio;
-                acc.totalNutrition.fats += (foodData.fats || 0) * ratio;
-                acc.totalNutrition.fibers += (foodData.fibers || 0) * ratio;
-                acc.totalWeight += ing.quantity;
-            }
-            return acc;
-        }, { 
-            totalNutrition: { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 },
-            totalWeight: 0 
-        });
-
-        await addDoc(collection(db, `users/${userId}/recipes`), { 
-            name, 
-            name_lowercase: name.toLowerCase(),
-            // Salva solo nome e quantità, l'ID non serve più dopo il calcolo
-            ingredients: ingredients.map(({ name, quantity, foodId }) => ({ name, quantity, foodId })), 
-            servings,
-            finalWeight,
-            totalNutrition,
-            totalWeight
-        });
-
-        showToast(`Ricetta "${name}" salvata!`);
-        resetRecipeForm();
-    } catch (error) {
-        console.error("Errore salvataggio ricetta:", error);
-        if (error.message.startsWith('Ingredienti non validi')) {
-            showToast(error.message, true);
-        } else {
-            showToast("Si è verificato un errore.", true);
-        }
-    } finally {
-        saveBtn.disabled = false;
-        saveBtn.innerHTML = originalBtnHTML;
-    }
 }
 
-async function saveRecipeChanges() {
-    if (!isOnline || !recipeToEditId) return;
+// Crea una nuova ricetta o, se recipeToEditId è impostato, aggiorna quella in modifica.
+async function saveRecipe() {
+    if (!isOnline) return showToast("Sei offline. Impossibile salvare.", true);
+    const editingId = recipeToEditId;
 
     const name = document.getElementById('recipe-name').value.trim();
     const servings = Number(document.getElementById('recipe-servings').value);
@@ -1297,27 +1212,22 @@ async function saveRecipeChanges() {
     if (!name) return showToast('Inserisci un nome per la ricetta.', true);
     if (!positive(servings)) return showToast('Il numero di porzioni deve essere maggiore di zero.', true);
 
-    const ingredients = Array.from(document.querySelectorAll('#recipe-ingredients > div'))
-        .map(el => {
-            const nameInput = el.querySelector('.recipe-ingredient-name');
-            return {
-                name: nameInput.value.trim(),
-                quantity: parseFloat(el.querySelector('.recipe-ingredient-quantity').value),
-                foodId: nameInput.dataset.foodId
-            };
-        })
-        .filter(ing => ing.name && ing.quantity > 0);
-
+    const ingredients = readRecipeIngredients();
     if (ingredients.length === 0) return showToast('Aggiungi almeno un ingrediente valido.', true);
+    if (ingredients.length > MAX_RECIPE_INGREDIENTS) {
+        return showToast(`Una ricetta non può avere più di ${MAX_RECIPE_INGREDIENTS} ingredienti (limite del database).`, true);
+    }
 
     const saveBtn = document.getElementById('save-recipe-btn');
+    if (saveBtn.disabled) return; // Evita salvataggi doppi da click ripetuti
     const originalBtnHTML = saveBtn.innerHTML;
 
     try {
         saveBtn.disabled = true;
         saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Salvataggio...`;
 
-        const ingredientIds = ingredients.map(ing => ing.foodId).filter(id => id);
+        // 1. Recupera i dati di tutti gli ingredienti con una sola query
+        const ingredientIds = [...new Set(ingredients.map(ing => ing.foodId).filter(id => id))];
         const foodDataMap = new Map();
         if (ingredientIds.length > 0) {
             const q = query(collection(db, 'foods'), where(documentId(), 'in', ingredientIds));
@@ -1325,28 +1235,16 @@ async function saveRecipeChanges() {
             snapshot.forEach(doc => foodDataMap.set(doc.id, doc.data()));
         }
 
-        const missingIngredients = ingredients.filter(ing => !ing.foodId || !foodDataMap.has(ing.foodId));
+        // 2. Verifica che tutti gli ingredienti siano stati trovati nel database
+        const missingIngredients = findMissingIngredients(ingredients, foodDataMap);
         if (missingIngredients.length > 0) {
             const missingNames = missingIngredients.map(ing => ing.name).join(', ');
-            throw new Error(`Ingredienti non validi: ${missingNames}. Selezionali dalla lista per confermarli.`);
+            return showToast(`Ingredienti non validi: ${missingNames}. Selezionali dalla lista per confermarli.`, true);
         }
 
-        const { totalNutrition, totalWeight } = ingredients.reduce((acc, ing) => {
-            const foodData = foodDataMap.get(ing.foodId);
-            if (foodData) {
-                const ratio = ing.quantity / 100;
-                acc.totalNutrition.calories += (foodData.calories || 0) * ratio;
-                acc.totalNutrition.proteins += (foodData.proteins || 0) * ratio;
-                acc.totalNutrition.carbs += (foodData.carbs || 0) * ratio;
-                acc.totalNutrition.fats += (foodData.fats || 0) * ratio;
-                acc.totalNutrition.fibers += (foodData.fibers || 0) * ratio;
-                acc.totalWeight += ing.quantity;
-            }
-            return acc;
-        }, { totalNutrition: { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 }, totalWeight: 0 });
-
-        const recipeRef = doc(db, `users/${userId}/recipes`, recipeToEditId);
-        await updateDoc(recipeRef, {
+        // 3. Calcola i totali nutrizionali e il peso totale
+        const { totalNutrition, totalWeight } = computeRecipeNutrition(ingredients, foodDataMap);
+        const recipeData = {
             name,
             name_lowercase: name.toLowerCase(),
             ingredients: ingredients.map(({ name, quantity, foodId }) => ({ name, quantity, foodId })),
@@ -1354,20 +1252,24 @@ async function saveRecipeChanges() {
             finalWeight,
             totalNutrition,
             totalWeight
-        });
+        };
 
-        showToast(`Ricetta "${name}" aggiornata!`);
-        exitRecipeEditMode();
-    } catch (error) {
-        console.error("Errore aggiornamento ricetta:", error);
-        if (error.message.startsWith('Ingredienti non validi')) {
-            showToast(error.message, true);
+        if (editingId) {
+            await updateDoc(doc(db, `users/${userId}/recipes`, editingId), recipeData);
+            showToast(`Ricetta "${name}" aggiornata!`);
+            exitRecipeEditMode();
         } else {
-            showToast("Si è verificato un errore durante l'aggiornamento.", true);
+            await addDoc(collection(db, `users/${userId}/recipes`), recipeData);
+            showToast(`Ricetta "${name}" salvata!`);
+            resetRecipeForm();
         }
+    } catch (error) {
+        console.error("Errore salvataggio ricetta:", error);
+        showToast(editingId ? "Si è verificato un errore durante l'aggiornamento." : "Si è verificato un errore.", true);
     } finally {
         saveBtn.disabled = false;
-        saveBtn.innerHTML = originalBtnHTML;
+        // Dopo un aggiornamento riuscito exitRecipeEditMode ha già impostato il testo del pulsante.
+        if (recipeToEditId === editingId) saveBtn.innerHTML = originalBtnHTML;
     }
 }
 
@@ -1563,9 +1465,9 @@ function renderSelectedDayMeals() {
     // Se il contenitore principale è vuoto, lo costruiamo per la prima volta.
     if (mainContainer.innerHTML.trim() === '') {
         mainContainer.innerHTML = Object.keys(mealsByCategory).map(categoryName => `
-            <div class="meal-category" data-category-name="${categoryName}">
+            <div class="meal-category" data-category-name="${escapeText(categoryName)}">
                 <div class="meal-category-header">
-                    <h3 class="text-lg font-semibold text-slate-200">${categoryName}</h3>
+                    <h3 class="text-lg font-semibold text-slate-200">${escapeText(categoryName)}</h3>
                     <div class="text-xs md:text-sm font-medium text-slate-400 category-totals truncate mt-1">
                         <!-- I totali verranno aggiornati qui -->
                     </div>
@@ -1579,25 +1481,19 @@ function renderSelectedDayMeals() {
     
     // Ora aggiorniamo ogni categoria individualmente senza distruggere la struttura.
     Object.entries(mealsByCategory).forEach(([categoryName, meals]) => {
-        const categoryElement = mainContainer.querySelector(`.meal-category[data-category-name="${categoryName}"]`);
+        const categoryElement = mainContainer.querySelector(`.meal-category[data-category-name="${CSS.escape(categoryName)}"]`);
         if (!categoryElement) return; // Salta se l'elemento non esiste
 
         const listContainer = categoryElement.querySelector('.meal-list-container');
         const totalsContainer = categoryElement.querySelector('.category-totals');
-        const categoryTotals = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
+        const categoryTotals = emptyTotals();
         let mealsHTML = '';
         
         if (meals.length > 0) {
             // L'ordinamento è già stato fatto durante la creazione della cache
             mealsHTML = meals.map(meal => {
-                const calculated = {
-                    calories: ((Number(meal.calories) || 0) * (Number(meal.quantity) || 0) / 100),
-                    proteins: ((Number(meal.proteins) || 0) * (Number(meal.quantity) || 0) / 100),
-                    carbs: ((Number(meal.carbs) || 0) * (Number(meal.quantity) || 0) / 100),
-                    fats: ((Number(meal.fats) || 0) * (Number(meal.quantity) || 0) / 100),
-                    fibers: ((Number(meal.fibers) || 0) * (Number(meal.quantity) || 0) / 100)
-                };
-                Object.keys(categoryTotals).forEach(key => categoryTotals[key] += calculated[key]);
+                const calculated = mealNutrition(meal);
+                addTotals(categoryTotals, calculated);
                 return `
                 <div class="meal-item is-entering flex flex-col md:flex-row md:items-center p-4" data-id="${meal.id}">
                     <div class="flex-1 min-w-0">
@@ -1679,9 +1575,9 @@ function renderRecipes() {
         <div class="recipe-card" data-id="${recipe.id}">
             <div class="flex justify-between items-start">
                 <div>
-                    <h4 class="font-bold text-lg text-slate-200 mb-3">${recipe.name} ${recipe.servings > 1 ? `(${recipe.servings} porzioni)` : ''}</h4>
+                    <h4 class="font-bold text-lg text-slate-200 mb-3">${escapeText(recipe.name)} ${recipe.servings > 1 ? `(${recipe.servings} porzioni)` : ''}</h4>
                     <ul class="mt-2 text-sm text-slate-400 list-disc pl-5 space-y-1">
-                        ${recipe.ingredients.map(ing => `<li>${ing.name}: ${ing.quantity}g</li>`).join('')}
+                        ${recipe.ingredients.map(ing => `<li>${escapeText(ing.name)}: ${escapeText(ing.quantity)}g</li>`).join('')}
                     </ul>
                     ${(recipe.totalNutrition && recipe.totalWeight && recipe.servings) ? `
                     <div class="mt-4 pt-4 border-t border-slate-700">
@@ -2050,96 +1946,21 @@ function showFoodLookupDetails(food) {
     // Pulisce la lista precedente
     detailsList.innerHTML = '';
 
-    // Mappa per definire nomi, unità, icone e gruppi
-    const nutrientMap = {
-        // Macronutrienti
-        calories: { name: 'Calorie', unit: 'kcal', icon: 'fa-fire-alt text-red-500', group: 'macro' },
-        proteins: { name: 'Proteine', unit: 'g', icon: 'fa-drumstick-bite text-green-500', group: 'macro' },
-        carbs: { name: 'Carboidrati', unit: 'g', icon: 'fa-bread-slice text-yellow-500', group: 'macro' },
-        fats: { name: 'Grassi', unit: 'g', icon: 'fa-bacon text-pink-500', group: 'macro' },
-        fibers: { name: 'Fibre', unit: 'g', icon: 'fa-seedling text-blue-500', group: 'macro' },
-        amido_g: { name: 'Amido', unit: 'g', icon: 'fa-bread-slice text-yellow-500', group: 'macro' },
-        zuccheri_solubili_g: { name: 'Zuccheri', unit: 'g', icon: 'fa-bread-slice text-yellow-500', group: 'macro' },
-        acqua_g: { name: 'Acqua', unit: 'g', icon: 'fa-tint text-cyan-400', group: 'macro' },
-        colesterolo_mg: { name: 'Colesterolo', unit: 'mg', icon: 'fa-bacon text-pink-500', group: 'macro' },
-        
-        // Minerali
-        calcio_mg: { name: 'Calcio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        sodio_mg: { name: 'Sodio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        potassio_mg: { name: 'Potassio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        ferro_mg: { name: 'Ferro', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        fosforo_mg: { name: 'Fosforo', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        zinco_mg: { name: 'Zinco', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        magnesio_mg: { name: 'Magnesio', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        rame_mg: { name: 'Rame', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        selenio_mcg: { name: 'Selenio', unit: 'µg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-        manganese_mg: { name: 'Manganese', unit: 'mg', icon: 'fa-atom text-gray-400', group: 'mineral' },
-
-        // Vitamine
-        vitamina_c_mg: { name: 'Vitamina C', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        tiamina_mg: { name: 'Vitamina B1', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        riboflavina_mg: { name: 'Vitamina B2', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        niacina_mg: { name: 'Vitamina B3', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        vitamina_b6_mg: { name: 'Vitamina B6', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        vitamina_b12_mcg: { name: 'Vitamina B12', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        folati_mcg: { name: 'Folati (B9)', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        vitamina_a_retinolo_equivalente_mcg: { name: 'Vitamina A', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        vitamina_d_mcg: { name: 'Vitamina D', unit: 'µg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-        vitamina_e_mg: { name: 'Vitamina E', unit: 'mg', icon: 'fa-capsules text-orange-400', group: 'vitamin' },
-    };
-
-    const groups = {
-        macro: { title: 'Macronutrienti Principali', items: [], order: 1 },
-        mineral: { title: 'Minerali', items: [], order: 2 },
-        vitamin: { title: 'Vitamine', items: [], order: 3 },
-        other: { title: 'Altri Nutrienti', items: [], order: 4 }
-    };
-
-    const excludedFields = new Set(['name', 'name_lowercase', 'original_id', 'source_url', 'energia_kj']);
-
-    for (const key in food) {
-        if (food.hasOwnProperty(key) && !excludedFields.has(key) && typeof food[key] === 'number' && food[key] > 0) {
-            const info = nutrientMap[key];
-            const groupKey = info ? info.group : 'other';
-            
-            if (groups[groupKey]) {
-                groups[groupKey].items.push({
-                    key: key,
-                    value: food[key],
-                    ...info
-                });
-            }
-        }
-    }
-
-    // Ordina i macronutrienti principali
-    const macroOrder = ['calories', 'proteins', 'carbs', 'fats', 'fibers'];
-    groups.macro.items.sort((a, b) => {
-        const indexA = macroOrder.indexOf(a.key);
-        const indexB = macroOrder.indexOf(b.key);
-        if (indexA === -1 && indexB === -1) return a.name.localeCompare(b.name);
-        if (indexA === -1) return 1;
-        if (indexB === -1) return -1;
-        return indexA - indexB;
-    });
-
     let htmlContent = '';
-    Object.values(groups).sort((a, b) => a.order - b.order).forEach(group => {
-        if (group.items.length > 0) {
-            htmlContent += `<li class="nutrient-group-header col-span-full">${group.title}</li>`;
-            group.items.forEach(item => {
-                const displayName = item.name || item.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                const unit = item.unit ? ` ${item.unit}` : '';
-                const icon = item.icon || 'fa-atom text-gray-400';
-                
-                htmlContent += `
-                    <li>
-                        <i class="fas ${icon} w-5 text-center mr-2" aria-hidden="true"></i>
-                        <strong>${displayName}:</strong> 
-                        <span>${item.value}${unit}</span>
-                    </li>`;
-            });
-        }
+    groupNutrientDetails(food).forEach(group => {
+        htmlContent += `<li class="nutrient-group-header col-span-full">${group.title}</li>`;
+        group.items.forEach(item => {
+            const displayName = item.name || item.key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            const unit = item.unit ? ` ${item.unit}` : '';
+            const icon = item.icon || 'fa-atom text-gray-400';
+            
+            htmlContent += `
+                <li>
+                    <i class="fas ${icon} w-5 text-center mr-2" aria-hidden="true"></i>
+                    <strong>${escapeText(displayName)}:</strong> 
+                    <span>${escapeText(item.value)}${unit}</span>
+                </li>`;
+        });
     });
 
     if (htmlContent === '') {
@@ -2436,10 +2257,10 @@ function setupIngredientSearch(ingredientInput) {
             updateRecipeBuilderMacroBar();
         },
         itemRenderer: (item) => `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${escapeText(item.id)}">
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
-                    <div class="font-medium text-slate-200">${item.name}</div>
+                    <div class="font-medium text-slate-200">${escapeText(item.name)}</div>
                     <div class="text-sm text-slate-400">${item.calories || 0} cal/100g</div>
                 </div>
             </div>
@@ -2477,32 +2298,8 @@ function recalculateDailyTotals() {
     dailyTotalsCache = {};
     allMeals.forEach(meal => {
         const dateKey = meal.jsDate.toISOString().split('T')[0];
-        if (!dailyTotalsCache[dateKey]) {
-            dailyTotalsCache[dateKey] = { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
-        }
-        const ratio = (Number(meal.quantity) || 0) / 100;
-        const totals = dailyTotalsCache[dateKey]; 
-        // FIX: Rende il calcolo più robusto, usando i nuovi campi come fallback
-        // per garantire che i totali non diventino NaN (Not a Number).
-        const mealCalories = meal.calories ?? meal.energia_kcal ?? 0; // Corretto
-        const mealProteins = meal.proteins ?? meal.proteine_g ?? 0;
-        const mealCarbs = meal.carbs ?? meal.carboidrati_disponibili_g ?? 0;
-        const mealFats = meal.fats ?? meal.lipidi_g ?? 0;
-        const mealFibers = meal.fibers ?? meal.fibra_totale_g ?? 0;
-
-        // FIX: Aggiunto controllo isNaN per ogni valore prima di sommarlo.
-        // Questo previene la propagazione di NaN (Not a Number) nei totali.
-        const cal = (Number(mealCalories) || 0) * ratio;
-        const pro = (Number(mealProteins) || 0) * ratio;
-        const car = (Number(mealCarbs) || 0) * ratio;
-        const fat = (Number(mealFats) || 0) * ratio;
-        const fib = (Number(mealFibers) || 0) * ratio;
-
-        if (!isNaN(cal)) totals.calories += cal;
-        if (!isNaN(pro)) totals.proteins += pro;
-        if (!isNaN(car)) totals.carbs += car;
-        if (!isNaN(fat)) totals.fats += fat;
-        if (!isNaN(fib)) totals.fibers += fib;
+        dailyTotalsCache[dateKey] ??= emptyTotals();
+        addTotals(dailyTotalsCache[dateKey], mealNutrition(meal));
     });
 }
 
@@ -2602,10 +2399,10 @@ function openRecipeEditor(recipeId) {
         newRow.className = 'ingredient-row flex gap-3 items-start';
         newRow.innerHTML = `
             <div class="flex-1 relative">
-                <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off" value="${ing.name}" data-food-id="${ing.foodId || ''}">
+                <input type="text" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off" value="${escapeText(ing.name)}" data-food-id="${escapeText(ing.foodId || '')}">
                 <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
             </div>
-            <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" value="${ing.quantity}">
+            <input type="number" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" value="${escapeText(ing.quantity)}">
             <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn"><i class="fas fa-trash"></i></button>
         `;
         ingredientsContainer.appendChild(newRow);
@@ -2628,7 +2425,6 @@ function openRecipeEditor(recipeId) {
     document.querySelector('#recipes-content h3').textContent = 'Modifica Ricetta';
     const saveBtn = document.getElementById('save-recipe-btn');
     saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i> Salva Modifiche';
-    saveBtn.onclick = saveRecipeChanges; // Cambia l'azione del pulsante
 
     // Aggiungi un pulsante "Annulla"
     const cancelButton = document.createElement('button');
@@ -2655,7 +2451,6 @@ function exitRecipeEditMode() {
     document.querySelector('#recipes-content h3').textContent = 'Crea Nuova Ricetta';
     const saveBtn = document.getElementById('save-recipe-btn');
     saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i> Salva Ricetta';
-    saveBtn.onclick = saveRecipe;
 
     const cancelButton = document.getElementById('cancel-edit-recipe-btn');
     if (cancelButton) cancelButton.remove();
@@ -2664,22 +2459,6 @@ function exitRecipeEditMode() {
 }
 
 // --- Funzioni di ricerca ---
-
-// Funzione di utilità per calcolare lo score di pertinenza di un risultato di ricerca
-const calculateSearchScore = (item, searchTerm) => {
-    const nameLower = item.name_lowercase || '';
-    if (nameLower === searchTerm) return 100; // Corrispondenza esatta
-    if (nameLower.startsWith(searchTerm)) return 90; // Corrispondenza prefisso
-    
-    const searchTokens = searchTerm.split(' ').filter(t => t.length > 0);
-    if (searchTokens.some(st => (item.search_tokens || []).includes(st))) return 80; // Corrispondenza token
-
-    if (nameLower.includes(searchTerm)) return 70; // Contiene la stringa
-    return 0; // Nessuna corrispondenza forte
-};
-
-// Ordina i risultati in base allo score e poi alfabeticamente
-const sortResults = (results, searchTerm) => results.sort((a, b) => calculateSearchScore(b, searchTerm) - calculateSearchScore(a, searchTerm) || a.name.localeCompare(b.name));
 
 function setupSearchHandler({ inputElement, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
     let currentResults = [];
@@ -2807,69 +2586,47 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
     });
 }
 
-async function searchFoodsOnly(searchTerm) {
-    const lowerCaseSearchTerm = searchTerm.toLowerCase();
-
-    // Query 1: Prefix search on the whole name
+// Cerca alimenti su Firestore per prefisso del nome e per token, e aggiorna la cache on-demand.
+async function fetchFoodMatches(lowerCaseSearchTerm) {
     const prefixQuery = query(
         collection(db, 'foods'),
         where('name_lowercase', '>=', lowerCaseSearchTerm),
         where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
         limit(10)
     );
-
-    // Query 2: Token search for words inside the name
     const tokenQuery = query(
         collection(db, 'foods'),
         where('search_tokens', 'array-contains', lowerCaseSearchTerm),
         limit(10)
     );
+    const snapshots = await Promise.allSettled([getDocs(prefixQuery), getDocs(tokenQuery)]);
 
+    const matches = new Map();
+    snapshots.forEach(snapshot => {
+        if (snapshot.status !== 'fulfilled') return;
+        snapshot.value.docs.forEach(doc => {
+            if (!matches.has(doc.id)) matches.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false });
+        });
+    });
+    matches.forEach((food, id) => {
+        if (!foods.some(f => f.id === id)) foods.push(food);
+    });
+    return matches;
+}
+
+async function searchFoodsOnly(searchTerm) {
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
     try {
-        // Esegui le query su Firestore
-        const [prefixSnapshot, tokenSnapshot] = await Promise.allSettled([
-            getDocs(prefixQuery),
-            getDocs(tokenQuery)
-        ]);
+        const results = await fetchFoodMatches(lowerCaseSearchTerm);
 
-        const results = new Map();
-
-        // Aggiungi i risultati da Firestore
-        if (prefixSnapshot.status === 'fulfilled') {
-            prefixSnapshot.value.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false }));
-        }
-        if (tokenSnapshot.status === 'fulfilled') {
-            tokenSnapshot.value.docs.forEach(doc => {
-                if (!results.has(doc.id)) {
-                    results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false });
-                }
-            });
-        }
-
-        // Aggiorna la cache on-demand con i nuovi risultati da Firestore
-        results.forEach((food, id) => {
-            if (!foods.some(f => f.id === id)) {
-                foods.push(food);
-            }
-        });
-
-        // Ricerca client-side nella cache per trovare corrispondenze parziali non coperte dalle query Firestore
-        const searchTokens = lowerCaseSearchTerm.split(' ').filter(t => t.length > 0);
+        // Ricerca client-side nella cache per corrispondenze parziali non coperte dalle query Firestore
         foods.forEach(food => {
-            if (!results.has(food.id)) {
-                const nameLower = food.name_lowercase || '';
-                const foodTokens = food.search_tokens || [];
-                if (nameLower.includes(lowerCaseSearchTerm) || searchTokens.some(st => foodTokens.includes(st))) {
-                    results.set(food.id, { ...food, isRecipe: false });
-                }
+            if (!results.has(food.id) && matchesSearch(food, lowerCaseSearchTerm)) {
+                results.set(food.id, { ...food, isRecipe: false });
             }
         });
 
-        const finalResults = Array.from(results.values());
-        // Ordina i risultati in base alla pertinenza
-        sortResults(finalResults, lowerCaseSearchTerm);
-
-        return finalResults.slice(0, 20); // Limita i risultati finali
+        return sortResults(Array.from(results.values()), lowerCaseSearchTerm).slice(0, 20);
     } catch (error) {
         console.error("Errore in searchFoodsOnly:", error);
         showToast("Errore durante la ricerca nel database.", true);
@@ -2882,22 +2639,6 @@ async function searchFoodsAndRecipes(searchTerm) {
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
 
     try {
-        // Query 1: Prefix search on the whole name
-        const prefixQuery = query(
-            collection(db, 'foods'),
-            where('name_lowercase', '>=', lowerCaseSearchTerm),
-            where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
-            limit(10)
-        );
-
-        // Query 2: Token search for words inside the name
-        const tokenQuery = query(
-            collection(db, 'foods'),
-            where('search_tokens', 'array-contains', lowerCaseSearchTerm),
-            limit(10)
-        );
-        
-        // Promise per la ricerca di ricette (prefix search)
         const recipesQuery = query(
             collection(db, `users/${userId}/recipes`),
             where('name_lowercase', '>=', lowerCaseSearchTerm),
@@ -2905,55 +2646,27 @@ async function searchFoodsAndRecipes(searchTerm) {
             orderBy('name_lowercase'),
             limit(10)
         );
-
-        // Esegui le query in parallelo, gestendo eventuali fallimenti
-        const [prefixSnapshot, tokenSnapshot, recipesSnapshot] = await Promise.allSettled([
-            getDocs(prefixQuery),
-            getDocs(tokenQuery),
-            getDocs(recipesQuery)
+        const [foodMatches, recipesSnapshot] = await Promise.all([
+            fetchFoodMatches(lowerCaseSearchTerm),
+            getDocs(recipesQuery).catch(error => {
+                console.error("Errore ricerca ricette:", error);
+                return null;
+            })
         ]);
 
+        // Le ricette vengono prima, a parità di score
         const results = new Map();
-
-        // Aggiungi ricette
-        if (recipesSnapshot.status === 'fulfilled') {
-            recipesSnapshot.value.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: true }));
-        }
-
-        // Aggiungi alimenti da Firestore
-        if (prefixSnapshot.status === 'fulfilled') {
-            prefixSnapshot.value.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false }));
-        }
-        if (tokenSnapshot.status === 'fulfilled') {
-            tokenSnapshot.value.docs.forEach(doc => {
-                if (!results.has(doc.id)) results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: false });
-            });
-        }
-
-        // Aggiorna la cache on-demand con i nuovi alimenti trovati su Firestore
-        results.forEach((item, id) => {
-            if (!item.isRecipe && !foods.some(f => f.id === id)) {
-                foods.push(item);
-            }
-        });
+        recipesSnapshot?.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: true }));
+        foodMatches.forEach((food, id) => results.set(id, food));
 
         // Ricerca client-side nella cache per corrispondenze parziali non coperte dalle query Firestore
-        const searchTokens = lowerCaseSearchTerm.split(' ').filter(t => t.length > 0);
         [...foods, ...recipes].forEach(item => {
-            if (!results.has(item.id)) {
-                const nameLower = item.name_lowercase || '';
-                const itemTokens = item.search_tokens || [];
-                if (nameLower.includes(lowerCaseSearchTerm) || searchTokens.some(st => itemTokens.includes(st))) {
-                    results.set(item.id, { ...item, isRecipe: !!item.ingredients });
-                }
+            if (!results.has(item.id) && matchesSearch(item, lowerCaseSearchTerm)) {
+                results.set(item.id, { ...item, isRecipe: !!item.ingredients });
             }
         });
 
-        // Combina e ordina i risultati
-        const combinedResults = Array.from(results.values());
-        sortResults(combinedResults, lowerCaseSearchTerm);
-
-        return combinedResults.slice(0, 20);
+        return sortResults(Array.from(results.values()), lowerCaseSearchTerm).slice(0, 20);
     } catch (error) {
         console.error("Errore nella ricerca unificata:", error);
         showToast("Errore durante la ricerca.", true);

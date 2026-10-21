@@ -11,9 +11,13 @@ NutriTrack is an Italian food diary web application for tracking nutrition and m
 ### Build and Development
 - `npm run build:css` - Build and watch Tailwind CSS (compiles input.css to style.css)
 - `npm run init:css` - Initialize Tailwind CSS configuration
+- `npm run build` - Build Tailwind CSS once
+- `npm test` - Run the test suite (`node --test tests/*.test.mjs`)
+- `python3 tests/ui-preview.py --serve` - Local UI preview with the real `script.js`, mocked Firebase and sample data (localhost:8765)
 
 ### Firebase Deployment
-- Use Firebase CLI: `firebase deploy` to deploy to Firebase Hosting
+- Use Firebase CLI: `firebase deploy` to deploy hosting and Firestore rules
+- `firebase deploy --only firestore:rules` - Deploy only the security rules (`firestore.rules`)
 - Configuration is in `firebase.json` with public folder as hosting root
 
 ## Architecture Overview
@@ -25,6 +29,13 @@ NutriTrack is an Italian food diary web application for tracking nutrition and m
   - `utils.js` - Date utilities, formatting, debouncing
   - `uiHelpers.js` - Toast notifications, UI animations
   - `charts.js` - Chart.js integration for nutrition charts
+  - `nutrition.js` - Pure nutrition math: meal totals (with CREA field fallbacks), recipe totals, nutrient detail grouping
+  - `foodSearch.js` - Pure search helpers: search tokens, relevance score, sorting, client-side matching
+  - `portions.js` / `portionPicker.js` / `mealEntry.js` - Portion units, saved quantities, guided meal entry
+  - `scanner.js` - Barcode scanner (html5-qrcode), owns its own state
+  - `aiPhotoAnalysis.js` - Gemini photo analysis (API key kept in the user's localStorage)
+- **`public/sw.js`** - Service worker: network-first for app files, cache-first for pinned CDN libraries
+- **`firestore.rules`** - Security rules: `users/{uid}/**` private to the owner; shared `foods` readable/addable by signed-in users with field validation, no client deletes
 - **`public/style.css`** - Generated Tailwind CSS output
 - **`public/input.css`** - Tailwind CSS source file
 - **`public/firebase-config.js`** - Firebase configuration
@@ -61,8 +72,11 @@ NutriTrack is an Italian food diary web application for tracking nutrition and m
 ## Development Notes
 
 - The app is entirely client-side with no build process except CSS compilation
-- Firebase rules and security are handled server-side
+- Security is enforced by `firestore.rules` (versioned in the repo, deployed with the Firebase CLI)
 - All strings and UI are in Italian
 - Uses modern JavaScript features (ES6 modules, async/await)
 - Chart.js for data visualizations
-- No testing framework currently configured
+- Tests use the built-in `node:test` runner; `tests/app-portions.test.mjs` evaluates `script.js` in a `vm` context with imports stripped, so functions from new modules used by `script.js` must be added to that harness context
+- Pure logic goes in `public/modules/` (testable); DOM and Firestore code stays in `script.js`
+- Escape any user or shared-database string inserted via `innerHTML` with `escapeText()`
+- CDN script URLs in `index.html` are pinned to exact versions

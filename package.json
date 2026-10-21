@@ -20,9 +20,6 @@
   },
   "homepage": "https://github.com/loodsph/diario_alimentare#readme",
   "description": "",
-  "dependencies": {
-    "firebase": "^12.2.1"
-  },
   "devDependencies": {
     "tailwindcss": "^3.4.3"
   }

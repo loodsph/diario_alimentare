@@ -8,14 +8,14 @@
 <meta content="Un diario alimentare intelligente per tracciare la tua nutrizione." name="description"/>
 <meta content="#fbfaf7" media="(prefers-color-scheme: light)" name="theme-color"/>
 <meta content="#1c211e" media="(prefers-color-scheme: dark)" name="theme-color"/>
-<link href="https://cdn-icons-png.freepik.com/512/8280/8280802.png" rel="icon" type="image/png"/>
+<link href="icons/favicon-32.png" rel="icon" sizes="32x32" type="image/png"/>
 <!-- PWA & Mobile App configuration -->
 <link href="manifest.json" rel="manifest"/>
 <meta content="yes" name="mobile-web-app-capable"/>
 <meta content="yes" name="apple-mobile-web-app-capable"/>
 <meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"/>
 <meta content="NutriTrack" name="apple-mobile-web-app-title"/>
-<link href="https://cdn-icons-png.freepik.com/512/8280/8280802.png" rel="apple-touch-icon"/>
+<link href="icons/apple-touch-icon.png" rel="apple-touch-icon"/>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
@@ -788,9 +788,14 @@
 </div>
 </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script defer="" src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
-<script defer="" src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<script defer="" src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script defer="" src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
 <script src="script.js" type="module"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(err => console.error('Service worker non registrato:', err)));
+}
+</script>
 </body>
 </html>

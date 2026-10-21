@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import * as portions from '../public/modules/portions.js';
+import * as nutrition from '../public/modules/nutrition.js';
+import * as foodSearch from '../public/modules/foodSearch.js';
 
 const source = fs.readFileSync(new URL('../public/script.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '');
 
@@ -15,13 +17,13 @@ function harness({ food = null, quantity = 100, custom = false, failWrite = fals
         return fields.get(id);
     };
     const context = vm.createContext({
-        ...portions, console: { error() {} }, navigator: { onLine: true },
+        ...portions, ...nutrition, ...foodSearch, console: { error() {} }, navigator: { onLine: true },
         window: { addEventListener() {} }, getTodayUTC: () => new Date('2026-10-20T12:00:00Z'),
-        document: { getElementById: element }, fixtureFood: food, fixtureQuantity: quantity, fixtureCustom: custom,
+        document: { getElementById: element, querySelectorAll: () => context.fixtureRows, querySelector: () => element('section-title') }, fixtureRows: [], fixtureFood: food, fixtureQuantity: quantity, fixtureCustom: custom,
         localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
         Timestamp: { now: () => 0, fromDate: value => value },
         collection: (...args) => args, query: (...args) => args, where: (...args) => args,
-        doc: (...args) => args,
+        doc: (...args) => args, documentId: () => '__name__',
         updateDoc: async (path, data) => writes.push({ path, data, updated: true }),
         getDocs: async () => ({ docs: [] }),
         addDoc: async (path, data) => { if (failWrite) throw Error('Offline'); writes.push({ path, data }); },
@@ -137,4 +139,37 @@ test('editing a meal weight replaces stale portion metadata and rejects invalid 
     assert.equal(app.writes[0].data.quantity, 90);
     assert.equal(app.writes[0].data.portion.unitId, 'g');
     assert.equal(app.writes[0].data.portion.amount, 90);
+});
+
+test('recipe cards escape names coming from the shared food database', () => {
+    const app = harness();
+    app.run(`recipes = [{ id: 'r1', name: '<img src=x onerror=alert(1)>', servings: 1, ingredients: [{ name: '<script>x</script>', quantity: 100 }] }]; renderRecipes();`);
+    const html = app.element('saved-recipes').innerHTML;
+    assert.ok(!html.includes('<img'));
+    assert.ok(!html.includes('<script>'));
+    assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
+});
+
+test('saving an edited recipe updates it once and never creates a duplicate', async () => {
+    const app = harness();
+    const row = (name, quantity, foodId) => ({ querySelector: selector => selector === '.recipe-ingredient-name' ? { value: name, dataset: { foodId } } : { value: String(quantity) } });
+    app.context.fixtureRows = [row('Pasta', 200, 'f1'), row('Olio', 10, 'f2')];
+    app.run(`
+        getDocs = async () => ({ forEach: fn => [
+            { id: 'f1', data: () => ({ calories: 350, proteins: 12, carbs: 70, fats: 1.5, fibers: 3 }) },
+            { id: 'f2', data: () => ({ calories: 900, proteins: 0, carbs: 0, fats: 100 }) }
+        ].forEach(fn) });
+        recipeToEditId = 'r1';
+        exitRecipeEditMode = () => { recipeToEditId = null; };
+    `);
+    app.element('recipe-name').value = 'Pasta in bianco';
+    app.element('recipe-servings').value = '2';
+    app.element('recipe-final-weight').value = '';
+    await app.run('saveRecipe()');
+    assert.equal(app.writes.length, 1);
+    assert.equal(app.writes[0].updated, true);
+    assert.equal(app.writes[0].path.at(-1), 'r1');
+    assert.equal(app.writes[0].data.totalNutrition.calories, 790);
+    assert.equal(app.writes[0].data.totalWeight, 210);
+    assert.equal(app.run('recipeToEditId'), null);
 });

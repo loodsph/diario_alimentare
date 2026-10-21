@@ -1,9 +1,18 @@
 // Barcode scanner module
 import { showToast } from './uiHelpers.js';
-import {
-    onDecodeCallback, html5QrCode, availableCameras, currentCameraIndex,
-    setScannerState
-} from './state.js';
+
+// Stato dello scanner, usato solo da questo modulo.
+let onDecodeCallback = null;
+let html5QrCode = null;
+let availableCameras = [];
+let currentCameraIndex = 0;
+
+function setScannerState(callback, qrCode, cameras, index) {
+    onDecodeCallback = callback;
+    html5QrCode = qrCode;
+    availableCameras = cameras;
+    currentCameraIndex = index;
+}
 
 export async function startScanner(onDecode) {
     // Update state

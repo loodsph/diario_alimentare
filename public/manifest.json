@@ -2,22 +2,15 @@
     "name": "NutriTrack - Smart Food Diary",
     "short_name": "NutriTrack",
     "start_url": "/index.html",
+    "scope": "/",
     "display": "standalone",
+    "lang": "it",
     "background_color": "#fbfaf7",
     "theme_color": "#fbfaf7",
     "description": "Un diario alimentare intelligente per tracciare la tua nutrizione.",
     "icons": [
-        {
-            "src": "https://cdn-icons-png.freepik.com/512/8280/8280802.png",
-            "sizes": "512x512",
-            "type": "image/png",
-            "purpose": "any maskable"
-        }
-    ],
-    "permissions": [
-        {
-            "name": "camera",
-            "description": "Necessario per scansionare i codici a barre dei prodotti."
-        }
-    ] 
+        { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+        { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+        { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    ]
 }
