@@ -11,11 +11,11 @@ const defaultLineOptions = {
         y: {
             beginAtZero: true,
             grid: { color: 'rgba(148, 163, 184, 0.1)' },
-            ticks: { color: '#94a3b8' }
+            ticks: { color: '#7e8c81' }
         },
         x: {
             grid: { display: false },
-            ticks: { color: '#94a3b8' }
+            ticks: { color: '#7e8c81' }
         }
     }
 };
@@ -23,7 +23,7 @@ const defaultLineOptions = {
 const defaultDoughnutOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { position: 'bottom', labels: { padding: 20, color: '#94a3b8' } } },
+    plugins: { legend: { position: 'bottom', labels: { padding: 20, color: '#7e8c81' } } },
     cutout: '70%'
 };
 
@@ -35,8 +35,8 @@ export function initCharts(calorieCtx, macroCtx) {
             labels: [],
             datasets: [{
                 label: 'Calorie', data: [],
-                borderColor: '#6366f1',
-                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                borderColor: '#718f7b',
+                backgroundColor: 'rgba(113, 143, 123, 0.12)',
                 tension: 0.4, fill: true
             }]
         },
@@ -50,8 +50,8 @@ export function initCharts(calorieCtx, macroCtx) {
             labels: ['Proteine', 'Carboidrati', 'Grassi'],
             datasets: [{
                 data: [0, 0, 0],
-                backgroundColor: ['#10b981', '#f59e0b', '#ef4444'],
-                borderColor: ['#059669', '#d97706', '#dc2626'],
+                backgroundColor: ['#718f7b', '#b29b70', '#8b8f9c'],
+                borderColor: ['#718f7b', '#b29b70', '#8b8f9c'],
                 borderWidth: 2,
                 hoverOffset: 10
             }]

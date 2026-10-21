@@ -16,6 +16,12 @@
     const html = await (await fetch('../public/index.html')).text();
     const source = new DOMParser().parseFromString(html, 'text/html');
     document.getElementById('preview').append(document.importNode(source.getElementById('add-meal-card'), true));
+    document.getElementById('add-meal-card').classList.remove('hidden');
+    document.getElementById('entry-portion').classList.remove('hidden');
+    document.querySelector('.editor-navigation').remove();
+    document.getElementById('change-meal-food').classList.add('hidden');
+    document.querySelector('.entry-search-label').classList.add('hidden');
+    document.getElementById('food-search-container').classList.add('hidden');
     const foods = [
         { name: 'Yogurt · vasetto da 125 g', calories: 60, servingGrams: 125, servingLabel: 'Vasetti', packageGrams: 125 },
         { name: 'Ricetta · 4 porzioni', isRecipe: true, servings: 4, totalWeight: 500, finalWeight: 1000, totalNutrition: { calories: 1200, proteins: 40, carbs: 160, fats: 44 } },
@@ -39,7 +45,7 @@
         const button = document.createElement('button');
         button.className = 'portion-chip';
         button.textContent = item.name;
-        button.onclick = () => { food = item; picker.select(food); document.getElementById('food-search').value = food.name; update(); };
+        button.onclick = () => { food = item; document.getElementById('selected-food-name').textContent = food.name; picker.select(food); document.getElementById('food-search').value = food.name; update(); };
         document.getElementById('recent-portions').append(button);
     });
     document.getElementById('ai-photo-btn').classList.add('hidden');
@@ -61,6 +67,7 @@
     restore.onclick = () => { picker.select(food, saved); update(); };
     document.getElementById('preview').append(restore);
     picker.select(food);
+    document.getElementById('selected-food-name').textContent = food.name;
     document.getElementById('food-search').value = food.name;
     update();
 </script>

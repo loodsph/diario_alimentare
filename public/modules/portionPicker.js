@@ -16,6 +16,8 @@ export function createPortionPicker(root, onChange) {
     function render() {
         const unit = currentUnit();
         const quantity = quantityInGrams(amount.value, unit);
+        const minus = get('portion-minus');
+        if (minus) minus.disabled = !positive(Number(amount.value)) || Number(amount.value) <= (unit.id === 'g' ? 10 : 0.25);
         get('meal-quantity-label').textContent = unit.id === 'g' ? 'Quantità in grammi' : 'Quante unità?';
         const recipeWarning = food.isRecipe && !positive(food.finalWeight)
             ? ' Il peso cotto non è registrato: usa le porzioni o una frazione della ricetta.' : '';
@@ -70,6 +72,18 @@ export function createPortionPicker(root, onChange) {
     amount.addEventListener('input', trackQuantity);
     shortcuts.addEventListener('click', trackQuantity);
     select.addEventListener('change', trackQuantity);
+
+    for (const [id, direction] of [['portion-minus', -1], ['portion-plus', 1]]) {
+        get(id)?.addEventListener('click', () => {
+            const step = currentUnit().id === 'g' ? 10 : 0.25;
+            const value = Number(amount.value) || 0;
+            amount.value = Number(Math.max(step, value + direction * step).toFixed(4));
+            origin = '';
+            render();
+            trackQuantity();
+            onChange();
+        });
+    }
 
     get('save-portion-unit').addEventListener('click', () => {
         const label = get('custom-portion-label').value.trim();

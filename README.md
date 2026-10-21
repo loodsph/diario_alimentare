@@ -31,3 +31,23 @@ I test usano il test runner di Node (verificati con Node 22), senza scritture su
 Il modello foto è `gemini-3.5-flash-lite`, con output JSON e validazione prima dell’importazione. Riferimento: [documentazione Google del modello](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite). L’uso richiede una chiave Google AI Studio e disponibilità della relativa quota.
 
 La compilazione produce `public/style.css`. La pubblicazione su Firebase è un’operazione separata.
+
+### Interfaccia Diario essenziale
+
+Il diario mostra pasti, riepilogo e acqua. **Andamento** raccoglie obiettivi e grafici;
+**La tua raccolta** contiene ricette, storico e database degli alimenti.
+**Aggiungi qualcosa** apre due passaggi: alimento e porzione. Tornare al diario conserva
+la bozza; il salvataggio riuscito la azzera. Le ricette, i preferiti, lo scanner e le foto
+portano allo stesso selettore delle porzioni. Il tema segue la preferenza chiaro/scuro del dispositivo.
+
+Per provare l’interfaccia senza accedere a Firebase:
+
+```sh
+python3 tests/ui-preview.py --serve
+```
+
+Aprire `http://127.0.0.1:8765`. Il comando serve una copia temporanea dei soli file pubblici,
+con pasti fittizi e salvataggi in memoria. Non espone configurazioni o credenziali.
+`/light.html` forza i colori chiari per il controllo visivo. Account, salvataggio ricette,
+scanner e analisi AI richiedono invece l’app configurata: l’anteprima serve a verificare
+navigazione, ricerca degli esempi, porzioni e inserimento nel diario. Arrestare con Ctrl+C.

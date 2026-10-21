@@ -1,948 +1,796 @@
 <!DOCTYPE html>
+
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NutriTrack</title>
-    <meta name="description" content="Un diario alimentare intelligente per tracciare la tua nutrizione.">
-    <meta name="theme-color" content="#0F172A">
-    
-    <link rel="icon" type="image/png" href="https://cdn-icons-png.freepik.com/512/8280/8280802.png">
-
-    <!-- PWA & Mobile App configuration -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="NutriTrack">
-    <link rel="apple-touch-icon" href="https://cdn-icons-png.freepik.com/512/8280/8280802.png">
-    
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-
-    <link rel="stylesheet" href="style.css">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NutriTrack</title>
+<meta content="Un diario alimentare intelligente per tracciare la tua nutrizione." name="description"/>
+<meta content="#fbfaf7" media="(prefers-color-scheme: light)" name="theme-color"/>
+<meta content="#1c211e" media="(prefers-color-scheme: dark)" name="theme-color"/>
+<link href="https://cdn-icons-png.freepik.com/512/8280/8280802.png" rel="icon" type="image/png"/>
+<!-- PWA & Mobile App configuration -->
+<link href="manifest.json" rel="manifest"/>
+<meta content="yes" name="mobile-web-app-capable"/>
+<meta content="yes" name="apple-mobile-web-app-capable"/>
+<meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"/>
+<meta content="NutriTrack" name="apple-mobile-web-app-title"/>
+<link href="https://cdn-icons-png.freepik.com/512/8280/8280802.png" rel="apple-touch-icon"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="style.css" rel="stylesheet"/>
 </head>
-<body class="bg-particles">
-    <div id="offline-indicator" class="offline-indicator" role="alert" aria-live="assertive">
-        <i class="fas fa-wifi-slash mr-2"></i>
+<body class="nutritrack">
+<div aria-live="assertive" class="offline-indicator" id="offline-indicator" role="alert">
+<i class="fas fa-wifi-slash mr-2"></i>
         Sei offline. Alcune funzionalità potrebbero non essere disponibili.
     </div>
-    
-    <div id="loading-overlay" class="fixed inset-0 bg-slate-900 bg-opacity-90 flex items-center justify-center z-50">
-        <div class="text-center">
-            <div class="loader mb-6"></div>
-            <h2 class="text-2xl font-bold text-slate-200 mb-2">NutriTrack</h2>
-            <p class="text-slate-400">Inizializzazione in corso...</p>
-        </div>
-    </div>
-    
-    <div id="login-screen" class="fixed inset-0 bg-slate-900 bg-opacity-80 items-center justify-center z-40 hidden">
-        <div class="text-center p-8 glass-card rounded-2xl max-w-sm w-full mx-4">
-            <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 mb-4">NutriTrack</h1>
-            <p class="text-slate-300 mb-8">Accedi per iniziare a tracciare la tua alimentazione.</p>
-            <button id="login-btn" class="btn-modern btn-primary w-full text-white py-3 rounded-full font-semibold text-lg flex items-center justify-center space-x-3">
-                <i class="fab fa-google" aria-hidden="true"></i>
-                <span>Accedi con Google</span>
-            </button>
-        </div>
-    </div>
-    
-    <div id="app" class="container mx-auto p-4 max-w-7xl hidden">
-        <div id="top-bar" class="hidden items-center justify-between gap-4 mb-8 p-4 glass-card rounded-2xl">
-            <div id="user-info" class="flex items-center space-x-4 min-w-0">
-                <img id="user-photo" src="" alt="Foto profilo utente" class="w-12 h-12 rounded-full border-2 border-indigo-500 flex-shrink-0">
-                <div class="min-w-0">
-                    <p class="font-semibold text-slate-200 truncate" id="user-name"></p>
-                    <p class="text-sm text-slate-400 truncate" id="user-email"></p>
-                </div>
-            </div>
-            <button id="logout-btn" class="btn-modern btn-danger md:px-5 px-3 py-2 rounded-full font-medium flex items-center md:space-x-2 flex-shrink-0" aria-label="Esci">
-                <i class="fas fa-sign-out-alt" aria-hidden="true"></i>
-                <span class="hidden md:inline">Esci</span>
-            </button>
-        </div>
-        
-        <header class="main-header">
-            <div class="w-24 h-1 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full mx-auto mb-4"></div>
-            <h1 class="main-title">NutriTrack</h1>
-        </header>
-        
-        <div class="glass-card p-8 rounded-3xl mb-8">
-            <div class="flex flex-col items-center gap-4">
-                <!-- Date navigation row -->
-                <div class="flex items-center justify-center gap-2 w-full">
-                    <button id="prev-day" class="btn-modern btn-primary !p-4" aria-label="Giorno precedente">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-                    
-                    <input type="date" id="date-picker" class="input-modern text-center w-full max-w-xs !px-2">
-                    
-                    <button id="next-day" class="btn-modern btn-primary !p-4" aria-label="Giorno successivo">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
-                
-                <!-- Today button -->
-                <button id="today-btn" class="btn-modern btn-success flex items-center gap-2">
-                    <i class="fas fa-calendar-day"></i>
-                    <span>Oggi</span>
-                </button>
-            </div>
-            
-            <div class="text-center mt-8">
-                <h2 id="current-date-display" class="text-4xl font-bold mb-2"></h2>
-                <p id="day-info" class="text-slate-400 text-lg"></p>
-            </div>
-        </div>
-        
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-8 mb-10">
-            <div id="add-meal-card" class="glass-card glow p-8 rounded-3xl">
-                <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center">
-                        <i class="fas fa-plus text-white"></i>
-                    </div>
-                    Aggiungi Pasto
-                </h2>
-                
-                <div class="space-y-6">
-                    <div id="recent-portions-container" class="hidden">
-                        <p class="text-sm font-semibold text-slate-300 mb-3">Usati di recente <span class="text-slate-400 font-normal">· su questo dispositivo</span></p>
-                        <div id="recent-portions" class="portion-recent-list"></div>
-                    </div>
-                    <!-- Pasti Preferiti -->
-                    <div id="favorite-meals-container" class="hidden">
-                        <button id="favorite-meals-toggle" class="w-full text-left flex items-center justify-between p-4 bg-slate-800/50 rounded-lg hover:bg-slate-700/50 transition-colors">
-                            <div class="flex items-center gap-3">
-                                <i class="fas fa-heart text-red-400 text-lg"></i>
-                                <span class="text-base font-semibold text-slate-300">Pasti Preferiti</span>
-                            </div>
-                            <i id="favorite-meals-chevron" class="fas fa-chevron-down text-slate-400 transition-transform text-lg"></i>
-                        </button>
-                        <div id="favorite-meals-content" class="hidden mt-2 space-y-2"></div>
-                    </div>
+<div class="fixed inset-0 bg-slate-900 bg-opacity-90 flex items-center justify-center z-50" id="loading-overlay">
+<div class="text-center">
+<div class="loader mb-6"></div>
+<h2 class="text-2xl font-bold text-slate-200 mb-2">NutriTrack</h2>
+<p class="text-slate-400">Inizializzazione in corso...</p>
+</div>
+</div>
+<div class="fixed inset-0 bg-slate-900 bg-opacity-80 items-center justify-center z-40 hidden" id="login-screen">
+<div class="text-center p-8 glass-card rounded-2xl max-w-sm w-full mx-4">
+<h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600 mb-4">NutriTrack</h1>
+<p class="text-slate-300 mb-8">Accedi per iniziare a tracciare la tua alimentazione.</p>
+<button class="btn-modern btn-primary w-full text-white py-3 rounded-full font-semibold text-lg flex items-center justify-center space-x-3" id="login-btn">
+<i aria-hidden="true" class="fab fa-google"></i>
+<span>Accedi con Google</span>
+</button>
+</div>
+</div>
+<div class="app-shell hidden" id="app">
+<div class="app-topbar hidden" id="top-bar"><a aria-label="NutriTrack, diario" class="wordmark" href="#"><i aria-hidden="true" class="fas fa-seedling"></i> nutritrack</a>
+<div class="profile-info" id="user-info">
+<img alt="Foto profilo utente" class="profile-photo" id="user-photo" src=""/>
+<div class="min-w-0">
+<p class="profile-name" id="user-name"></p>
+<p class="hidden" id="user-email"></p>
+</div>
+</div>
+<button aria-label="Esci" class="icon-button" id="logout-btn">
+<i aria-hidden="true" class="fas fa-sign-out-alt"></i>
+</button>
+</div><nav aria-label="Navigazione principale" class="app-nav"><button aria-current="page" data-view="diary" type="button">Diario</button><button data-view="insights" type="button">Andamento</button><button data-view="library" type="button">La tua raccolta</button></nav>
+<div class="diary-intro" id="diary-intro"><div><p class="eyebrow">IL TUO DIARIO</p><h1>Un pasto alla volta.</h1><p class="muted">Quello che mangi, con semplicità.</p></div><button class="btn-modern btn-primary" id="open-meal-entry"><span aria-hidden="true">＋</span> Aggiungi qualcosa</button></div><div class="date-navigation" id="date-navigation"><div class="date-controls"><button aria-label="Giorno precedente" class="icon-button" id="prev-day">
+<i class="fas fa-chevron-left"></i>
+</button><input aria-label="Data del diario" class="date-input" id="date-picker" type="date"/><button aria-label="Giorno successivo" class="icon-button" id="next-day">
+<i class="fas fa-chevron-right"></i>
+</button><button class="text-button" id="today-btn">
+<i class="fas fa-calendar-day"></i>
+<span>Oggi</span>
+</button></div><div class="date-caption"><h2 class="date-title" id="current-date-display"></h2><p class="muted" id="day-info"></p></div></div><main class="app-view" id="view-diary"><div class="nutrition-summary" id="nutrition-summary">
+<h3 class="text-3xl font-bold text-center mb-8 text-white">La giornata, finora</h3>
+<p class="muted" id="diary-energy-goal"></p><progress aria-label="Calorie rispetto all’obiettivo" id="diary-energy-progress" max="100" value="0"></progress><div class="summary-values">
+<div class="text-center">
+<div aria-live="polite" class="summary-number" id="total-calories">0</div>
+<div class="text-white/80 font-medium">Calorie</div>
+</div>
+<div class="text-center">
+<div aria-live="polite" class="summary-number" id="total-proteins">0</div>
+<div class="text-white/80 font-medium">Proteine (g)</div>
+</div>
+<div class="text-center">
+<div aria-live="polite" class="summary-number" id="total-carbs">0</div>
+<div class="text-white/80 font-medium">Carboidrati (g)</div>
+</div>
+<div class="text-center">
+<div aria-live="polite" class="summary-number" id="total-fats">0</div>
+<div class="text-white/80 font-medium">Grassi (g)</div>
+</div>
+<div class="text-center">
+<div aria-live="polite" class="summary-number" id="total-fibers">0</div>
+<div class="text-white/80 font-medium">Fibre (g)</div>
+</div>
+</div>
+</div><div class="diary-columns"><div class="diary-meals" id="day-meals-container">
+<h2 class="text-3xl font-bold mb-8 flex items-center gap-3">I pasti della giornata</h2>
+<div aria-label="Pasti del giorno" class="meal-sections" id="selected-day-meals" role="region">
+</div>
+</div><div class="water-card">
+<h3 class="text-2xl font-bold mb-6 flex items-center gap-3">Un sorso alla volta</h3>
+<div class="flex-grow flex flex-col items-center justify-center">
+<div aria-label="Bicchieri d'acqua bevuti" class="flex flex-wrap justify-center gap-4 mb-6" id="water-glasses-container">
+<!-- I bicchieri verranno generati da JavaScript -->
+</div>
+<p aria-live="polite" class="text-xl font-bold text-slate-200 mb-6" id="water-count-text">0 / 8 bicchieri</p>
+<p class="text-sm text-slate-500 -mt-4 mb-6">(1 bicchiere ≈ 200mL)</p>
+<div class="flex items-center gap-4">
+<button aria-label="Rimuovi un bicchiere d'acqua" class="btn-modern bg-slate-600 !p-4" id="remove-water-btn">
+<i class="fas fa-minus"></i>
+</button>
+<button aria-label="Aggiungi un bicchiere d'acqua" class="btn-modern btn-primary !p-4" id="add-water-btn">
+<i class="fas fa-plus"></i>
+</button>
+<button aria-label="Resetta il conteggio dell'acqua" class="btn-modern btn-danger !p-4" id="reset-water-btn">
+<i class="fas fa-sync-alt"></i>
+</button>
+</div>
+</div>
+</div></div></main><main class="app-view hidden" id="view-insights"><div class="page-intro"><p class="eyebrow">UNO SGUARDO D’INSIEME</p><h1>Il tuo andamento.</h1></div><div class="glass-card p-8 rounded-3xl">
+<h3 class="text-2xl font-bold mb-8 flex items-center gap-3">
 
-                    <div class="flex justify-between items-center">
-                        <label for="food-search" class="block text-sm font-semibold text-slate-300">Cerca Alimento o Scansiona</label>
-                        <button id="toggle-custom-meal-btn" class="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2">
-                            <i class="fas fa-pen-alt"></i>
-                            <span id="toggle-custom-meal-text">Crea pasto personalizzato</span>
-                        </button>
-                    </div>
-                    <div id="meal-entry-container" class="relative">
-                        <div id="food-search-container" class="meal-form-section active">
-                            <div id="food-search-wrapper" class="relative">
-                                <input type="text" id="food-search" class="search-input input-with-icon w-full pr-20" placeholder="Cerca un alimento..." autocomplete="off">
-                                <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
-                                    <i id="food-search-icon" class="fas fa-search text-slate-400 transition-opacity duration-300"></i>
-                                </div>
-                                <div class="absolute inset-y-0 right-0 flex items-center pr-3 ">
-                                    <button id="scan-barcode-btn" type="button" class="btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre">
-                                        <i class="fas fa-barcode"></i>
-                                    </button>
-                                </div>
-                                <div id="search-results" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full hidden"></div>
-                            </div>
-                            <button id="ai-photo-btn" type="button" class="mt-3 w-full btn-modern text-white !py-2 text-sm flex items-center justify-center gap-2" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);" aria-label="Analizza foto con AI">
-                                <i class="fas fa-camera"></i>
-                                Analizza foto con AI
-                            </button>
-                        </div>
-                        <div id="custom-meal-container" class="meal-form-section space-y-4 hidden">
-                            <input type="text" id="custom-meal-name" class="input-modern w-full" placeholder="Nome pasto personalizzato">
-                            <div class="grid grid-cols-2 gap-4">
-                                <input type="number" id="custom-meal-calories" class="input-modern w-full" placeholder="Calorie (per 100g)">
-                                <input type="number" id="custom-meal-proteins" class="input-modern w-full" placeholder="Proteine (per 100g)">
-                                <input type="number" id="custom-meal-carbs" class="input-modern w-full" placeholder="Carboidrati (per 100g)">
-                                <input type="number" id="custom-meal-fats" class="input-modern w-full" placeholder="Grassi (per 100g)">
-                            </div>
-                            <div class="flex items-center pt-2">
-                                <input id="save-custom-meal-as-food" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-700 text-indigo-500 focus:ring-indigo-600 focus:ring-offset-slate-800">
-                                <label for="save-custom-meal-as-food" class="ml-3 block text-sm font-medium text-slate-300">Salva come nuovo alimento nel database</label>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label for="meal-type" class="block text-sm font-semibold text-slate-300 mb-3">Tipo Pasto</label>
-                            <select id="meal-type" class="input-modern w-full">
-                                <option value="🌅 Colazione">🌅 Colazione</option>
-                                <option value="🍽️ Pranzo">🍽️ Pranzo</option>
-                                <option value="🌙 Cena">🌙 Cena</option>
-                                <option value="🍪 Spuntino">🍪 Spuntino</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <fieldset class="portion-panel">
-                        <legend class="text-lg font-semibold text-slate-200">Quanto ne hai mangiato?</legend>
-                        <div class="portion-fields">
-                            <div>
-                                <label for="portion-unit" class="block text-sm text-slate-300 mb-2">Misura</label>
-                                <select id="portion-unit" class="input-modern w-full">
-                                    <option value="g">Grammi</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label for="meal-quantity" id="meal-quantity-label" class="block text-sm text-slate-300 mb-2">Quantità in grammi</label>
-                                <input type="number" id="meal-quantity" class="input-modern w-full" min="0.01" step="any" inputmode="decimal" placeholder="Inserisci quantità" aria-describedby="portion-hint">
-                            </div>
-                        </div>
-                        <div id="portion-shortcuts" class="portion-shortcuts" role="group" aria-label="Frazioni rapide"></div>
-                        <p id="portion-hint" class="text-sm text-slate-300 mt-3" aria-live="polite">Seleziona un alimento per scegliere la porzione.</p>
-                        <details id="portion-help" class="mt-4">
-                            <summary class="text-sm text-indigo-300 cursor-pointer">Non so il peso / usa fette, pezzi o vasetti</summary>
-                            <p class="text-sm text-slate-300 mt-3">Hai una confezione? Usa il peso netto in etichetta e la frazione che hai mangiato. Per una ricetta, scegli le porzioni o una parte della preparazione.</p>
-                            <p class="text-sm text-slate-400 mt-2">Per fette, pezzi, cucchiai o bicchieri, definisci una misura per questo alimento: ricava il peso dall’etichetta o pesala una volta. I ml non vengono convertiti automaticamente in grammi. Per un piatto senza riferimenti puoi usare la foto AI e verificare la stima.</p>
-                            <div class="portion-fields mt-3">
-                                <div>
-                                    <label for="custom-portion-label" class="block text-sm text-slate-300 mb-2">La tua misura</label>
-                                    <input id="custom-portion-label" class="input-modern w-full" maxlength="60" placeholder="es. fetta, vasetto, cucchiaio">
-                                </div>
-                                <div>
-                                    <label for="custom-portion-grams" class="block text-sm text-slate-300 mb-2">Peso di una unità (g)</label>
-                                    <input id="custom-portion-grams" type="number" min="0.01" step="any" inputmode="decimal" class="input-modern w-full" placeholder="Dall’etichetta o bilancia">
-                                </div>
-                            </div>
-                            <p id="portion-unit-error" class="text-sm text-red-400 mt-2" role="alert"></p>
-                            <button id="save-portion-unit" type="button" class="portion-chip mt-3">Usa questa misura</button>
-                        </details>
-                    </fieldset>
-                    
-                    <div id="meal-preview" class="hidden mt-4 p-4 bg-slate-800/50 rounded-xl text-sm text-slate-300 space-y-2 transition-all duration-300">
-                        <div class="flex justify-between items-center mb-2">
-                            <h4 class="font-semibold text-slate-200">Anteprima Nutrizionale:</h4>
-                            <button id="add-to-favorites-btn" class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded transition-colors" title="Aggiungi ai preferiti">
-                                <i class="fas fa-heart mr-1"></i>
-                                Aggiungi ai preferiti
-                            </button>
-                        </div>
-                        <div class="grid grid-cols-2 gap-x-4 gap-y-1">
-                            <span><i class="fas fa-fire-alt text-red-400 w-5 text-center mr-1"></i>Calorie:</span> <span id="preview-calories" class="font-bold text-right">0</span>
-                            <span><i class="fas fa-drumstick-bite text-green-400 w-5 text-center mr-1"></i>Proteine:</span> <span id="preview-proteins" class="font-bold text-right">0 g</span>
-                            <span><i class="fas fa-bread-slice text-yellow-400 w-5 text-center mr-1"></i>Carboidrati:</span> <span id="preview-carbs" class="font-bold text-right">0 g</span>
-                            <span><i class="fas fa-bacon text-pink-400 w-5 text-center mr-1"></i>Grassi:</span> <span id="preview-fats" class="font-bold text-right">0 g</span>
-                            <span><i class="fas fa-seedling text-blue-400 w-5 text-center mr-1"></i>Fibre:</span> <span id="preview-fibers" class="font-bold text-right">0 g</span>
-                        </div>
-                    </div>
-                    
-                    <button id="add-meal-btn" class="btn-modern btn-primary w-full !py-4 text-lg">
-                        <i class="fas fa-plus-circle mr-3"></i>
-                        Aggiungi al Diario
-                    </button>
-                </div>
-            </div>
-            
-            <div id="day-meals-container" class="day-meals-container glass-card glow p-8 rounded-3xl">
-                <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 flex items-center justify-center">
-                        <i class="fas fa-utensils text-white"></i>
-                    </div>
-                    Pasti del Giorno
-                </h2>
-                <div id="selected-day-meals" class="space-y-6 max-h-96 overflow-y-auto pr-2" role="region" aria-label="Pasti del giorno">
-                    </div>
-            </div>
-        </div>
-        
-        <div class="stat-card p-8 mb-10 rounded-3xl">
-            <h3 class="text-3xl font-bold text-center mb-8 text-white">Riepilogo Nutrizionale</h3>
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-8">
-                <div class="text-center">
-                    <div id="total-calories" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
-                    <div class="text-white/80 font-medium">Calorie</div>
-                </div>
-                <div class="text-center">
-                    <div id="total-proteins" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
-                    <div class="text-white/80 font-medium">Proteine (g)</div>
-                </div>
-                <div class="text-center">
-                    <div id="total-carbs" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
-                    <div class="text-white/80 font-medium">Carboidrati (g)</div>
-                </div>
-                <div class="text-center">
-                    <div id="total-fats" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
-                    <div class="text-white/80 font-medium">Grassi (g)</div>
-                </div>
-                <div class="text-center">
-                    <div id="total-fibers" class="text-5xl font-black text-white mb-2" aria-live="polite">0</div>
-                    <div class="text-white/80 font-medium">Fibre (g)</div>
-                </div>
-            </div>
-
-        </div>
-        
-        <div class="glass-card p-8 rounded-3xl mb-10">
-            <h3 class="text-2xl font-bold mb-8 flex items-center gap-3">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-teal-500 flex items-center justify-center">
-                    <i class="fas fa-chart-bar text-white text-sm"></i>
-                </div>
-                Distribuzione Calorie Pasti
-            </h3>
-            <div id="meal-distribution-bar" class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner">
-                <div id="meal-dist-colazione" class="meal-dist-bar bg-colazione transition-all duration-500"></div>
-                <div id="meal-dist-pranzo" class="meal-dist-bar bg-pranzo transition-all duration-500"></div>
-                <div id="meal-dist-cena" class="meal-dist-bar bg-cena transition-all duration-500"></div>
-                <div id="meal-dist-spuntino" class="meal-dist-bar bg-spuntino transition-all duration-500"></div>
-            </div>
-            <div class="flex justify-around text-xs mt-3 text-slate-400 px-1">
-                <span><i class="fas fa-circle text-colazione mr-1 text-[.6rem]"></i>Colazione: <span id="meal-dist-colazione-perc">0%</span></span>
-                <span><i class="fas fa-circle text-pranzo mr-1 text-[.6rem]"></i>Pranzo: <span id="meal-dist-pranzo-perc">0%</span></span>
-                <span><i class="fas fa-circle text-cena mr-1 text-[.6rem]"></i>Cena: <span id="meal-dist-cena-perc">0%</span></span>
-                <span><i class="fas fa-circle text-spuntino mr-1 text-[.6rem]"></i>Spuntino: <span id="meal-dist-spuntino-perc">0%</span></span>
-            </div>
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-10">
-            <div class="lg:col-span-2">
-                <div class="glass-card p-8 rounded-3xl">
-                    <h3 class="text-2xl font-bold mb-8 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 flex items-center justify-center">
-                            <i class="fas fa-target text-white text-sm"></i>
-                        </div>
                         Obiettivi
                     </h3>
-                    
-                    <div class="space-y-6">
-                        <div>
-                            <div class="flex justify-between mb-3">
-                                <span class="font-medium text-slate-300">Calorie</span>
-                                <span id="calories-progress-text" class="font-bold text-slate-100" aria-live="polite">0/2000</span>
-                            </div>
-                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso calorie">
-                                <div id="calories-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #6366f1, #8b5cf6); width: 0%"></div>
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between mb-3">
-                                <span class="font-medium text-slate-300">Proteine</span>
-                                <span id="proteins-progress-text" class="font-bold text-slate-100" aria-live="polite">0/150g</span>
-                            </div>
-                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso proteine">
-                                <div id="proteins-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #10b981, #059669); width: 0%"></div>
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between mb-3">
-                                <span class="font-medium text-slate-300">Carboidrati</span>
-                                <span id="carbs-progress-text" class="font-bold text-slate-100" aria-live="polite">0/250g</span>
-                            </div>
-                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso carboidrati">
-                                <div id="carbs-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%"></div>
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between mb-3">
-                                <span class="font-medium text-slate-300">Grassi</span>
-                                <span id="fats-progress-text" class="font-bold text-slate-100" aria-live="polite">0/70g</span>
-                            </div>
-                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso grassi">
-                                <div id="fats-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 0%"></div>
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between mb-3">
-                                <span class="font-medium text-slate-300">Fibre</span>
-                                <span id="fibers-progress-text" class="font-bold text-slate-100" aria-live="polite">0/30g</span>
-                            </div>
-                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso fibre">
-                                <div id="fibers-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #4dc0b5, #3490dc); width: 0%"></div>
-                            </div>
-                        </div>
-                        
-                        <div>
-                            <div class="flex justify-between mb-3">
-                                <span class="font-medium text-slate-300">Acqua <span id="water-total-ml" class="text-slate-400 font-normal"></span></span>
-                                <span id="water-progress-text" class="font-bold text-slate-100" aria-live="polite">0/8 bicchieri</span>
-                            </div>
-                            <div class="progress-modern" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Progresso acqua">
-                                <div id="water-progress" class="progress-bar-modern" style="background: linear-gradient(90deg, #0ea5e9, #06b6d4); width: 0%"></div>
-                            </div>
-                        </div>
-                        
-                        <button id="edit-goals-btn" class="btn-modern btn-primary w-full">
-                            <i class="fas fa-cog mr-2"></i>
+<div class="space-y-6">
+<div>
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Calorie</span>
+<span aria-live="polite" class="font-bold text-slate-100" id="calories-progress-text">0/2000</span>
+</div>
+<div aria-label="Progresso calorie" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-modern" role="progressbar">
+<div class="progress-bar-modern" id="calories-progress" style="background: linear-gradient(90deg, #6366f1, #8b5cf6); width: 0%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Proteine</span>
+<span aria-live="polite" class="font-bold text-slate-100" id="proteins-progress-text">0/150g</span>
+</div>
+<div aria-label="Progresso proteine" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-modern" role="progressbar">
+<div class="progress-bar-modern" id="proteins-progress" style="background: #718f7b; width: 0%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Carboidrati</span>
+<span aria-live="polite" class="font-bold text-slate-100" id="carbs-progress-text">0/250g</span>
+</div>
+<div aria-label="Progresso carboidrati" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-modern" role="progressbar">
+<div class="progress-bar-modern" id="carbs-progress" style="background: #b29b70; width: 0%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Grassi</span>
+<span aria-live="polite" class="font-bold text-slate-100" id="fats-progress-text">0/70g</span>
+</div>
+<div aria-label="Progresso grassi" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-modern" role="progressbar">
+<div class="progress-bar-modern" id="fats-progress" style="background: #8b8f9c; width: 0%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Fibre</span>
+<span aria-live="polite" class="font-bold text-slate-100" id="fibers-progress-text">0/30g</span>
+</div>
+<div aria-label="Progresso fibre" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-modern" role="progressbar">
+<div class="progress-bar-modern" id="fibers-progress" style="background: linear-gradient(90deg, #4dc0b5, #3490dc); width: 0%"></div>
+</div>
+</div>
+<div>
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Acqua <span class="text-slate-400 font-normal" id="water-total-ml"></span></span>
+<span aria-live="polite" class="font-bold text-slate-100" id="water-progress-text">0/8 bicchieri</span>
+</div>
+<div aria-label="Progresso acqua" aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-modern" role="progressbar">
+<div class="progress-bar-modern" id="water-progress" style="background: linear-gradient(90deg, #0ea5e9, #06b6d4); width: 0%"></div>
+</div>
+</div>
+<button class="btn-modern btn-primary w-full" id="edit-goals-btn">
+<i class="fas fa-cog mr-2"></i>
                             Modifica Obiettivi
                         </button>
+<div class="mt-8 pt-6 border-t border-slate-700/50">
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Distribuzione Obiettivi Macro</span>
+</div>
+<div class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner" id="macro-distribution-bar">
+<div class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" id="macro-dist-proteins" style="background: #718f7b; width: 33.33%;"></div>
+<div class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" id="macro-dist-carbs" style="background: #b29b70; width: 33.33%;"></div>
+<div class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" id="macro-dist-fats" style="background: #8b8f9c; width: 33.33%;"></div>
+</div>
+<div class="flex justify-between text-xs mt-2 text-slate-400 px-1">
+<span><i class="fas fa-circle text-green-500 mr-1 text-[.6rem]"></i>P: <span id="macro-dist-proteins-perc">0%</span></span>
+<span><i class="fas fa-circle text-yellow-500 mr-1 text-[.6rem]"></i>C: <span id="macro-dist-carbs-perc">0%</span></span>
+<span><i class="fas fa-circle text-red-500 mr-1 text-[.6rem]"></i>G: <span id="macro-dist-fats-perc">0%</span></span>
+</div>
+</div>
+</div>
+</div><div class="glass-card p-8 rounded-3xl mb-10">
+<h3 class="text-2xl font-bold mb-8 flex items-center gap-3">
 
-                        <div class="mt-8 pt-6 border-t border-slate-700/50">
-                            <div class="flex justify-between mb-3">
-                                <span class="font-medium text-slate-300">Distribuzione Obiettivi Macro</span>
-                            </div>
-                            <div id="macro-distribution-bar" class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner">
-                                <div id="macro-dist-proteins" class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: 33.33%;"></div>
-                                <div id="macro-dist-carbs" class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 33.33%;"></div>
-                                <div id="macro-dist-fats" class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 33.33%;"></div>
-                            </div>
-                             <div class="flex justify-between text-xs mt-2 text-slate-400 px-1">
-                                <span><i class="fas fa-circle text-green-500 mr-1 text-[.6rem]"></i>P: <span id="macro-dist-proteins-perc">0%</span></span>
-                                <span><i class="fas fa-circle text-yellow-500 mr-1 text-[.6rem]"></i>C: <span id="macro-dist-carbs-perc">0%</span></span>
-                                <span><i class="fas fa-circle text-red-500 mr-1 text-[.6rem]"></i>G: <span id="macro-dist-fats-perc">0%</span></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="glass-card glow p-8 rounded-3xl flex flex-col">
-                <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-r from-sky-500 to-cyan-400 flex items-center justify-center">
-                        <i class="fas fa-tint text-white text-sm"></i>
-                    </div>
-                    Traccia Acqua
-                </h3>
-                <div class="flex-grow flex flex-col items-center justify-center">
-                    <div id="water-glasses-container" class="flex flex-wrap justify-center gap-4 mb-6" aria-label="Bicchieri d'acqua bevuti">
-                        <!-- I bicchieri verranno generati da JavaScript -->
-                    </div>
-                    <p id="water-count-text" class="text-xl font-bold text-slate-200 mb-6" aria-live="polite">0 / 8 bicchieri</p>
-                    <p class="text-sm text-slate-500 -mt-4 mb-6">(1 bicchiere ≈ 200mL)</p>
-                    <div class="flex items-center gap-4">
-                        <button id="remove-water-btn" class="btn-modern bg-slate-600 !p-4" aria-label="Rimuovi un bicchiere d'acqua">
-                            <i class="fas fa-minus"></i>
-                        </button>
-                        <button id="add-water-btn" class="btn-modern btn-primary !p-4" aria-label="Aggiungi un bicchiere d'acqua">
-                            <i class="fas fa-plus"></i>
-                        </button>
-                        <button id="reset-water-btn" class="btn-modern btn-danger !p-4" aria-label="Resetta il conteggio dell'acqua">
-                            <i class="fas fa-sync-alt"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
-            <div class="chart-container">
-                <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center">
-                        <i class="fas fa-chart-line text-white text-sm"></i>
-                    </div>
+                Distribuzione Calorie Pasti
+            </h3>
+<div class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner" id="meal-distribution-bar">
+<div class="meal-dist-bar bg-colazione transition-all duration-500" id="meal-dist-colazione"></div>
+<div class="meal-dist-bar bg-pranzo transition-all duration-500" id="meal-dist-pranzo"></div>
+<div class="meal-dist-bar bg-cena transition-all duration-500" id="meal-dist-cena"></div>
+<div class="meal-dist-bar bg-spuntino transition-all duration-500" id="meal-dist-spuntino"></div>
+</div>
+<div class="flex justify-around text-xs mt-3 text-slate-400 px-1">
+<span><i class="fas fa-circle text-colazione mr-1 text-[.6rem]"></i>Colazione: <span id="meal-dist-colazione-perc">0%</span></span>
+<span><i class="fas fa-circle text-pranzo mr-1 text-[.6rem]"></i>Pranzo: <span id="meal-dist-pranzo-perc">0%</span></span>
+<span><i class="fas fa-circle text-cena mr-1 text-[.6rem]"></i>Cena: <span id="meal-dist-cena-perc">0%</span></span>
+<span><i class="fas fa-circle text-spuntino mr-1 text-[.6rem]"></i>Spuntino: <span id="meal-dist-spuntino-perc">0%</span></span>
+</div>
+</div><div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
+<div class="chart-container">
+<h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
+
                     Andamento Calorico
                 </h3>
-                <div class="h-80">
-                    <canvas id="calorie-chart" role="img" aria-label="Grafico andamento calorico"></canvas>
-                </div>
-            </div>
-            
-            <div class="chart-container">
-                <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-pink-600 flex items-center justify-center">
-                        <i class="fas fa-chart-pie text-white text-sm"></i>
-                    </div>
+<div class="h-80">
+<canvas aria-label="Grafico andamento calorico" id="calorie-chart" role="img"></canvas>
+</div>
+</div>
+<div class="chart-container">
+<h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
+
                     Macronutrienti
                 </h3>
-                <div class="h-80">
-                    <canvas id="macro-chart" role="img" aria-label="Grafico distribuzione macronutrienti"></canvas>
-                </div>
-            </div>
-        </div>
-        
-        <div class="space-y-8">
+<div class="h-80">
+<canvas aria-label="Grafico distribuzione macronutrienti" id="macro-chart" role="img"></canvas>
+</div>
+</div>
+</div></main><main class="app-view hidden" id="view-library"><div class="page-intro"><p class="eyebrow">A PORTATA DI MANO</p><h1>La tua raccolta.</h1><p class="muted">Ricette, alimenti e storico delle tue giornate.</p></div><div class="space-y-8">
+<div class="collapsible-section collapsed">
+<button aria-controls="recipes-content" aria-expanded="false" class="section-header">
+<h2 class="text-2xl font-bold flex items-center gap-3">
 
-            <div class="collapsible-section collapsed">
-                <button class="section-header" aria-expanded="false" aria-controls="recipes-content">
-                    <h2 class="text-2xl font-bold flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-orange-500 to-red-600 flex items-center justify-center">
-                            <i class="fas fa-book text-white"></i>
-                        </div>
                         Le Mie Ricette
                     </h2>
-                    <i class="fas fa-chevron-down toggle-icon"></i>
-                </button>
-                <div id="recipes-content" class="section-content">
-                    <div class="section-content-inner">
-                        <div class="glass-card p-8 rounded-3xl">
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                <div>
-                                    <h3 class="text-xl font-bold mb-6">Crea Nuova Ricetta</h3>
-                                    <div class="space-y-6">
-                                        <input type="text" id="recipe-name" class="input-modern w-full" placeholder="Nome ricetta">
-                                        <div>
-                                            <label for="recipe-servings" class="block text-sm font-semibold text-slate-300 mb-3">Numero di Porzioni</label>
-                                            <input type="number" id="recipe-servings" min="0.01" step="any" inputmode="decimal" class="input-modern w-full" placeholder="es. 4" value="1">
-                                        </div>
-                                        <div>
-                                            <label for="recipe-final-weight" class="block text-sm font-semibold text-slate-300 mb-3">Peso finale della preparazione (g, facoltativo)</label>
-                                            <input type="number" id="recipe-final-weight" min="0.01" step="any" inputmode="decimal" class="input-modern w-full" placeholder="Dopo la cottura, senza recipiente">
-                                            <p class="text-sm text-slate-400 mt-2">Serve se vuoi pesare il piatto cotto. Senza questo dato, usa il numero di porzioni o una frazione della ricetta.</p>
-                                        </div>
-                                        
-                                        <div>
-                                            <h4 class="block text-sm font-semibold text-slate-300 mb-3">Ingredienti</h4>
-                                            <div id="recipe-ingredients" class="space-y-3">
-                                                <div class="ingredient-row flex gap-3 items-start">
-                                                    <div class="flex-1 relative">
-                                                        <input type="text" id="recipe-ingredient-name-0" name="recipe-ingredient-name" class="recipe-ingredient-name input-modern w-full" placeholder="Cerca ingrediente..." autocomplete="off">
-                                                        <div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
-                                                    </div>
-                                                    <input type="number" id="recipe-ingredient-quantity-0" name="recipe-ingredient-quantity" class="recipe-ingredient-quantity input-modern w-24" placeholder="g" aria-label="Quantità ingrediente">
-                                                    <button type="button" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn" aria-label="Rimuovi ingrediente">
-                                                        <i class="fas fa-trash"></i>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                            <button id="add-ingredient-btn" class="mt-4 text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2">
-                                                <i class="fas fa-plus-circle"></i>
+<i class="fas fa-chevron-down toggle-icon"></i>
+</button>
+<div class="section-content" id="recipes-content">
+<div class="section-content-inner">
+<div class="glass-card p-8 rounded-3xl">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+<div>
+<h3 class="text-xl font-bold mb-6">Crea Nuova Ricetta</h3>
+<div class="space-y-6">
+<input aria-label="Nome ricetta" class="input-modern w-full" id="recipe-name" placeholder="Nome ricetta" type="text"/>
+<div>
+<label class="block text-sm font-semibold text-slate-300 mb-3" for="recipe-servings">Numero di Porzioni</label>
+<input class="input-modern w-full" id="recipe-servings" inputmode="decimal" min="0.01" placeholder="es. 4" step="any" type="number" value="1"/>
+</div>
+<div>
+<label class="block text-sm font-semibold text-slate-300 mb-3" for="recipe-final-weight">Peso finale della preparazione (g, facoltativo)</label>
+<input class="input-modern w-full" id="recipe-final-weight" inputmode="decimal" min="0.01" placeholder="Dopo la cottura, senza recipiente" step="any" type="number"/>
+<p class="text-sm text-slate-400 mt-2">Serve se vuoi pesare il piatto cotto. Senza questo dato, usa il numero di porzioni o una frazione della ricetta.</p>
+</div>
+<div>
+<h4 class="block text-sm font-semibold text-slate-300 mb-3">Ingredienti</h4>
+<div class="space-y-3" id="recipe-ingredients">
+<div class="ingredient-row flex gap-3 items-start">
+<div class="flex-1 relative">
+<input aria-label="Cerca ingrediente..." autocomplete="off" class="recipe-ingredient-name input-modern w-full" id="recipe-ingredient-name-0" name="recipe-ingredient-name" placeholder="Cerca ingrediente..." type="text"/>
+<div class="recipe-ingredient-results search-results mt-2 max-h-48 overflow-y-auto absolute w-full z-10 hidden"></div>
+</div>
+<input aria-label="Quantità ingrediente" class="recipe-ingredient-quantity input-modern w-24" id="recipe-ingredient-quantity-0" name="recipe-ingredient-quantity" placeholder="g" type="number"/>
+<button aria-label="Rimuovi ingrediente" class="btn-modern btn-danger !py-2 !px-3 remove-ingredient-btn" type="button">
+<i class="fas fa-trash"></i>
+</button>
+</div>
+</div>
+<button class="mt-4 text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2" id="add-ingredient-btn">
+<i class="fas fa-plus-circle"></i>
                                                 Aggiungi Ingrediente
                                             </button>
-                                        </div>
-                                        
-                                        <div id="recipe-builder-macro-bar-container" class="mt-6 pt-6 border-t border-slate-700/50 hidden">
-                                            <p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro Ricetta (in tempo reale)</p>
-                                            <div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
-                                                <div id="recipe-builder-macro-proteins" class="transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: 0%;" title="Proteine"></div>
-                                                <div id="recipe-builder-macro-carbs" class="transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%;" title="Carboidrati"></div>
-                                                <div id="recipe-builder-macro-fats" class="transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 0%;" title="Grassi"></div>
-                                            </div>
-                                            <div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
-                                                <span>P: <span id="recipe-builder-macro-proteins-perc">0%</span></span>
-                                                <span>C: <span id="recipe-builder-macro-carbs-perc">0%</span></span>
-                                                <span>G: <span id="recipe-builder-macro-fats-perc">0%</span></span>
-                                            </div>
-                                        </div>
-
-                                        <button id="save-recipe-btn" class="btn-modern btn-success w-full">
-                                            <i class="fas fa-save mr-2"></i>
+</div>
+<div class="mt-6 pt-6 border-t border-slate-700/50 hidden" id="recipe-builder-macro-bar-container">
+<p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro Ricetta (in tempo reale)</p>
+<div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
+<div class="transition-all duration-500" id="recipe-builder-macro-proteins" style="background: #718f7b; width: 0%;" title="Proteine"></div>
+<div class="transition-all duration-500" id="recipe-builder-macro-carbs" style="background: #b29b70; width: 0%;" title="Carboidrati"></div>
+<div class="transition-all duration-500" id="recipe-builder-macro-fats" style="background: #8b8f9c; width: 0%;" title="Grassi"></div>
+</div>
+<div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
+<span>P: <span id="recipe-builder-macro-proteins-perc">0%</span></span>
+<span>C: <span id="recipe-builder-macro-carbs-perc">0%</span></span>
+<span>G: <span id="recipe-builder-macro-fats-perc">0%</span></span>
+</div>
+</div>
+<button class="btn-modern btn-success w-full" id="save-recipe-btn">
+<i class="fas fa-save mr-2"></i>
                                             Salva Ricetta
                                         </button>
-                                    </div>
-                                </div>
-                                
-                                <div>
-                                    <h3 class="text-xl font-bold mb-6">Ricette Salvate</h3>
-                                    <div id="saved-recipes" class="space-y-4 max-h-96 overflow-y-auto" role="region" aria-label="Ricette salvate">
-                                        </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+</div>
+</div>
+<div>
+<h3 class="text-xl font-bold mb-6">Ricette Salvate</h3>
+<div aria-label="Ricette salvate" class="space-y-4 max-h-96 overflow-y-auto" id="saved-recipes" role="region">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="collapsible-section collapsed">
+<button aria-controls="history-content" aria-expanded="false" class="section-header">
+<h2 class="text-2xl font-bold flex items-center gap-3">
 
-            <div class="collapsible-section collapsed">
-                <button class="section-header" aria-expanded="false" aria-controls="history-content">
-                    <h2 class="text-2xl font-bold flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 flex items-center justify-center">
-                            <i class="fas fa-history text-white"></i>
-                        </div>
                         Storico Ultimi 7 Giorni
                     </h2>
-                    <i class="fas fa-chevron-down toggle-icon"></i>
-                </button>
-                <div id="history-content" class="section-content">
-                    <div class="section-content-inner">
-                        <div class="glass-card p-8 rounded-3xl">
-                            <div class="overflow-x-auto">
-                                <table class="w-full" role="table" aria-label="Storico pasti">
-                                    <thead>
-                                        <tr class="border-b border-slate-700">
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Data</th>
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Calorie</th>
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Proteine</th>
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Carboidrati</th>
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Grassi</th>
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Fibre</th>
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Acqua</th>
-                                            <th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Pasti</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="weekly-history">
-                                        </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<i class="fas fa-chevron-down toggle-icon"></i>
+</button>
+<div class="section-content" id="history-content">
+<div class="section-content-inner">
+<div class="glass-card p-8 rounded-3xl">
+<div class="overflow-x-auto">
+<table aria-label="Storico pasti" class="w-full" role="table">
+<thead>
+<tr class="border-b border-slate-700">
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Data</th>
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Calorie</th>
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Proteine</th>
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Carboidrati</th>
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Grassi</th>
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Fibre</th>
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Acqua</th>
+<th class="text-left py-4 px-6 font-semibold text-slate-300" scope="col">Pasti</th>
+</tr>
+</thead>
+<tbody id="weekly-history">
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="collapsible-section collapsed">
+<button aria-controls="new-food-content" aria-expanded="false" class="section-header">
+<h2 class="text-2xl font-bold flex items-center gap-3">
 
-            <div class="collapsible-section collapsed">
-                <button class="section-header" aria-expanded="false" aria-controls="new-food-content">
-                     <h2 class="text-2xl font-bold flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-teal-500 to-cyan-600 flex items-center justify-center">
-                            <i class="fas fa-plus text-white"></i>
-                        </div>
                         Aggiungi Nuovo Alimento
                     </h2>
-                    <i class="fas fa-chevron-down toggle-icon"></i>
-                </button>
-                <div id="new-food-content" class="section-content">
-                    <div class="section-content-inner">
-                        <div class="glass-card p-8 rounded-3xl">
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start" id="new-food-form-grid">
-                                <div class="lg:col-span-3 relative">
-                                     <label for="new-food-name" class="input-label">Nome Alimento</label>
-                                     <input type="text" id="new-food-name" placeholder="Nome Alimento" class="input-modern w-full pr-20" aria-label="Nome alimento">
-                                     <div class="absolute inset-y-0 right-0 flex items-center pr-3">
-                                        <button id="scan-barcode-for-new-food-btn" type="button" class="btn-modern btn-primary !py-2 !px-3" aria-label="Scansiona codice a barre per nuovo alimento">
-                                            <i class="fas fa-barcode"></i>
-                                        </button>
-                                     </div>
-                                </div>
-                                <div>
-                                    <label for="new-food-calories" class="input-label">Calorie (per 100g)</label>
-                                    <input type="number" id="new-food-calories" class="input-modern w-full" placeholder="Calorie (per 100g)">
-                                </div>
-                                <div>
-                                    <label for="new-food-proteins" class="input-label">Proteine (g)</label>
-                                    <input type="number" id="new-food-proteins" class="input-modern w-full" placeholder="Proteine (g)">
-                                </div>
-                                <div>
-                                    <label for="new-food-carbs" class="input-label">Carboidrati (g)</label>
-                                    <input type="number" id="new-food-carbs" class="input-modern w-full" placeholder="Carboidrati (g)">
-                                </div>
-                                <div>
-                                    <label for="new-food-fats" class="input-label">Grassi (g)</label>
-                                    <input type="number" id="new-food-fats" class="input-modern w-full" placeholder="Grassi (g)">
-                                </div>
-                                <div>
-                                    <label for="new-food-fibers" class="input-label">Fibre (g)</label>
-                                    <input type="number" id="new-food-fibers" class="input-modern w-full" placeholder="Fibre (g)">
-                                </div>
-                                <button id="add-food-btn" class="btn-modern btn-success lg:col-span-3 w-full">
-                                    <i class="fas fa-plus-circle mr-2"></i>
+<i class="fas fa-chevron-down toggle-icon"></i>
+</button>
+<div class="section-content" id="new-food-content">
+<div class="section-content-inner">
+<div class="glass-card p-8 rounded-3xl">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start" id="new-food-form-grid">
+<div class="lg:col-span-3 relative">
+<label class="input-label" for="new-food-name">Nome Alimento</label>
+<input aria-label="Nome alimento" class="input-modern w-full pr-20" id="new-food-name" placeholder="Nome Alimento" type="text"/>
+<div class="absolute inset-y-0 right-0 flex items-center pr-3">
+<button aria-label="Scansiona codice a barre per nuovo alimento" class="btn-modern btn-primary !py-2 !px-3" id="scan-barcode-for-new-food-btn" type="button">
+<i class="fas fa-barcode"></i>
+</button>
+</div>
+</div>
+<div>
+<label class="input-label" for="new-food-calories">Calorie (per 100g)</label>
+<input class="input-modern w-full" id="new-food-calories" placeholder="Calorie (per 100g)" type="number"/>
+</div>
+<div>
+<label class="input-label" for="new-food-proteins">Proteine (g)</label>
+<input class="input-modern w-full" id="new-food-proteins" placeholder="Proteine (g)" type="number"/>
+</div>
+<div>
+<label class="input-label" for="new-food-carbs">Carboidrati (g)</label>
+<input class="input-modern w-full" id="new-food-carbs" placeholder="Carboidrati (g)" type="number"/>
+</div>
+<div>
+<label class="input-label" for="new-food-fats">Grassi (g)</label>
+<input class="input-modern w-full" id="new-food-fats" placeholder="Grassi (g)" type="number"/>
+</div>
+<div>
+<label class="input-label" for="new-food-fibers">Fibre (g)</label>
+<input class="input-modern w-full" id="new-food-fibers" placeholder="Fibre (g)" type="number"/>
+</div>
+<button class="btn-modern btn-success lg:col-span-3 w-full" id="add-food-btn">
+<i class="fas fa-plus-circle mr-2"></i>
                                     Aggiungi Alimento
                                 </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="collapsible-section collapsed">
+<button aria-controls="food-lookup-content" aria-expanded="false" class="section-header">
+<h2 class="text-2xl font-bold flex items-center gap-3">
 
-            <div class="collapsible-section collapsed">
-                <button class="section-header" aria-expanded="false" aria-controls="food-lookup-content">
-                     <h2 class="text-2xl font-bold flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-amber-500 to-yellow-600 flex items-center justify-center">
-                            <i class="fas fa-search-plus text-white"></i>
-                        </div>
                         Cerca Alimento nel Database
                     </h2>
-                    <i class="fas fa-chevron-down toggle-icon"></i>
-                </button>
-                <div id="food-lookup-content" class="section-content">
-                    <div class="section-content-inner">
-                        <div class="glass-card p-8 rounded-3xl min-h-96">
-                            <div id="food-lookup-wrapper" class="relative mb-4">
-                                <input type="text" id="food-lookup-search" class="search-input input-with-icon w-full" placeholder="Cerca un alimento per vederne i dettagli..." aria-label="Cerca alimento nel database" autocomplete="off">
-                                <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
-                                    <i id="food-lookup-search-icon" class="fas fa-search text-slate-400" aria-hidden="true"></i>
-                                </div>
-                                <div id="food-lookup-results-list" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full hidden" role="listbox" aria-label="Risultati ricerca alimento"></div>
-                            </div>
-                            <div id="food-lookup-details" class="mt-6 p-6 bg-slate-800 rounded-xl hidden">
-                                <h4 id="lookup-food-name" class="text-xl font-bold text-slate-200 mb-4"></h4>
-                                <ul id="lookup-food-details-list" class="space-y-3 text-slate-300 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3">
-                                    <!-- I dettagli nutrizionali verranno inseriti qui da JavaScript -->
-                                </ul>
-                                <div class="mt-6 flex justify-end">
-                                    <button id="edit-lookup-food-btn" class="btn-modern btn-primary hidden">Modifica Alimento</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<i class="fas fa-chevron-down toggle-icon"></i>
+</button>
+<div class="section-content" id="food-lookup-content">
+<div class="section-content-inner">
+<div class="glass-card p-8 rounded-3xl min-h-96">
+<div class="relative mb-4" id="food-lookup-wrapper">
+<input aria-label="Cerca alimento nel database" autocomplete="off" class="search-input input-with-icon w-full" id="food-lookup-search" placeholder="Cerca un alimento per vederne i dettagli..." type="text"/>
+<div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
+<i aria-hidden="true" class="fas fa-search text-slate-400" id="food-lookup-search-icon"></i>
+</div>
+<div aria-label="Risultati ricerca alimento" class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full hidden" id="food-lookup-results-list" role="listbox"></div>
+</div>
+<div class="mt-6 p-6 bg-slate-800 rounded-xl hidden" id="food-lookup-details">
+<h4 class="text-xl font-bold text-slate-200 mb-4" id="lookup-food-name"></h4>
+<ul class="space-y-3 text-slate-300 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-3" id="lookup-food-details-list">
+<!-- I dettagli nutrizionali verranno inseriti qui da JavaScript -->
+</ul>
+<div class="mt-6 flex justify-end">
+<button class="btn-modern btn-primary hidden" id="edit-lookup-food-btn">Modifica Alimento</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div></main><div aria-label="Aggiungi un alimento" class="meal-editor hidden" id="add-meal-card"><div class="editor-navigation"><button class="text-button" id="close-meal-entry">← Torna al diario</button><p class="entry-steps"><span aria-current="step" id="step-food-label">1 Alimento</span><span aria-hidden="true"> / </span><span id="step-portion-label">2 Porzione</span></p></div>
+<p class="muted" id="entry-date"></p><div class="entry-content"><section id="entry-food"><p class="eyebrow">COMINCIAMO DA QUI</p><h2 tabindex="-1">Che cosa hai mangiato?</h2><p class="muted editor-description">Cerca un alimento, scegli un abituale o usa una foto.</p><div class="entry-search-label">
+<label class="block text-sm font-semibold text-slate-300" for="food-search">Trova un alimento</label>
+<button class="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2" id="toggle-custom-meal-btn">
+<i class="fas fa-pen-alt"></i>
+<span id="toggle-custom-meal-text">Inserisci a mano</span>
+</button>
+</div><div class="relative" id="meal-entry-container">
+<div class="meal-form-section active" id="food-search-container">
+<div class="relative" id="food-search-wrapper">
+<input autocomplete="off" class="search-input input-with-icon w-full pr-20" id="food-search" placeholder="Cerca un alimento..." type="text"/>
+<div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-opacity duration-300">
+<i class="fas fa-search text-slate-400 transition-opacity duration-300" id="food-search-icon"></i>
+</div>
+<div class="absolute inset-y-0 right-0 flex items-center pr-3">
+<button aria-label="Scansiona codice a barre" class="btn-modern btn-primary !py-2 !px-3" id="scan-barcode-btn" type="button">
+<i class="fas fa-barcode"></i>
+</button>
+</div>
+<div class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full hidden" id="search-results"></div>
+</div>
+<button aria-label="Analizza foto con AI" class="btn-modern btn-secondary photo-entry" id="ai-photo-btn" type="button">
+<i class="fas fa-camera"></i> Stima da una foto</button>
+</div>
+<div class="meal-form-section space-y-4 hidden" id="custom-meal-container">
+<input aria-label="Nome pasto personalizzato" class="input-modern w-full" id="custom-meal-name" placeholder="Nome pasto personalizzato" type="text"/>
+<div class="grid grid-cols-2 gap-4">
+<input aria-label="Calorie (per 100g)" class="input-modern w-full" id="custom-meal-calories" placeholder="Calorie (per 100g)" type="number"/>
+<input aria-label="Proteine (per 100g)" class="input-modern w-full" id="custom-meal-proteins" placeholder="Proteine (per 100g)" type="number"/>
+<input aria-label="Carboidrati (per 100g)" class="input-modern w-full" id="custom-meal-carbs" placeholder="Carboidrati (per 100g)" type="number"/>
+<input aria-label="Grassi (per 100g)" class="input-modern w-full" id="custom-meal-fats" placeholder="Grassi (per 100g)" type="number"/>
+</div>
+<div class="flex items-center pt-2">
+<input class="h-4 w-4 rounded border-slate-600 bg-slate-700 text-indigo-500 focus:ring-indigo-600 focus:ring-offset-slate-800" id="save-custom-meal-as-food" type="checkbox"/>
+<label class="ml-3 block text-sm font-medium text-slate-300" for="save-custom-meal-as-food">Salva come nuovo alimento nel database</label>
+</div>
+<button class="btn-modern btn-primary w-full" id="continue-custom-meal" type="button">Scegli la porzione →</button><p id="custom-meal-error" role="alert"></p></div>
+</div><div class="hidden" id="recent-portions-container">
+<p class="text-sm font-semibold text-slate-300 mb-3">Usati di recente <span class="text-slate-400 font-normal">· su questo dispositivo</span></p>
+<div class="portion-recent-list" id="recent-portions"></div>
+</div><div class="hidden" id="favorite-meals-container">
+<button class="w-full text-left flex items-center justify-between p-4 bg-slate-800/50 rounded-lg hover:bg-slate-700/50 transition-colors" id="favorite-meals-toggle">
+<div class="flex items-center gap-3">
+<i class="fas fa-heart text-red-400 text-lg"></i>
+<span class="text-base font-semibold text-slate-300">Pasti Preferiti</span>
+</div>
+<i class="fas fa-chevron-down text-slate-400 transition-transform text-lg" id="favorite-meals-chevron"></i>
+</button>
+<div class="hidden mt-2 space-y-2" id="favorite-meals-content"></div>
+</div></section><section class="hidden" id="entry-portion"><p class="eyebrow">IL PASSO SUCCESSIVO</p><h2 tabindex="-1">La tua porzione.</h2><div class="selected-food"><div><span class="eyebrow">ALIMENTO SCELTO</span><p id="selected-food-name"></p></div><button class="text-button" id="change-meal-food">Cambia</button></div><div class="portion-context"><div>
+<label class="block text-sm font-semibold text-slate-300 mb-3" for="meal-type">Tipo Pasto</label>
+<select class="input-modern w-full" id="meal-type">
+<option value="🌅 Colazione">🌅 Colazione</option>
+<option value="🍽️ Pranzo">🍽️ Pranzo</option>
+<option value="🌙 Cena">🌙 Cena</option>
+<option value="🍪 Spuntino">🍪 Spuntino</option>
+</select>
+</div><div>
+<label class="block text-sm text-slate-300 mb-2" for="portion-unit">Misura</label>
+<select class="input-modern w-full" id="portion-unit">
+<option value="g">Grammi</option>
+</select>
+</div></div><fieldset class="portion-panel">
+<legend class="text-lg font-semibold text-slate-200">Quanto ne hai mangiato?</legend>
+<div class="portion-amount">
 
-        </div>
+<div>
+<label class="block text-sm text-slate-300 mb-2" for="meal-quantity" id="meal-quantity-label">Quantità in grammi</label>
+<div class="quantity-control"><button aria-label="Riduci quantità" class="icon-button" id="portion-minus" type="button">−</button><input aria-describedby="portion-hint" class="quantity-input" id="meal-quantity" inputmode="decimal" min="0.01" placeholder="—" step="any" type="number"/><button aria-label="Aumenta quantità" class="icon-button" id="portion-plus" type="button">＋</button></div>
+</div>
+</div>
+<div aria-label="Frazioni rapide" class="portion-shortcuts" id="portion-shortcuts" role="group"></div>
+<p aria-live="polite" class="text-sm text-slate-300 mt-3" id="portion-hint">Seleziona un alimento per scegliere la porzione.</p>
 
-        <footer class="text-center text-slate-500 text-sm mt-16 py-8 border-t border-slate-700/50">
-            <p class="mb-2">
-                Database alimenti basato su dati forniti da <a href="https://www.crea.gov.it/" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300">CREA - Alimenti e Nutrizione</a>.
+</fieldset><div class="portion-preview hidden" id="meal-preview">
+<div class="flex justify-between items-center mb-2">
+<h4 class="font-semibold text-slate-200">In questa porzione</h4>
+<button class="text-red-400 hover:text-red-300 text-sm px-2 py-1 rounded transition-colors" id="add-to-favorites-btn" title="Aggiungi ai preferiti">
+<i class="fas fa-heart mr-1"></i>
+                                Aggiungi ai preferiti
+                            </button>
+</div>
+<div class="preview-values"><div><span class="font-bold text-right" id="preview-calories">0</span><span>Calorie</span></div><div><span class="font-bold text-right" id="preview-proteins">0 g</span><span>Proteine</span></div><div><span class="font-bold text-right" id="preview-carbs">0 g</span><span>Carboidrati</span></div><div><span class="font-bold text-right" id="preview-fats">0 g</span><span>Grassi</span></div><div><span class="font-bold text-right" id="preview-fibers">0 g</span><span>Fibre</span></div></div>
+</div><button class="btn-modern btn-primary w-full !py-4 text-lg" id="add-meal-btn">
+<i class="fas fa-plus-circle mr-3"></i>
+                        Aggiungi al Diario
+                    </button><details class="mt-4" id="portion-help">
+<summary class="text-sm text-indigo-300 cursor-pointer">Usa fette, pezzi o vasetti</summary>
+<p class="text-sm text-slate-300 mt-3">Hai una confezione? Usa il peso netto in etichetta e la frazione che hai mangiato. Per una ricetta, scegli le porzioni o una parte della preparazione.</p>
+<p class="text-sm text-slate-400 mt-2">Per fette, pezzi, cucchiai o bicchieri, definisci una misura per questo alimento: ricava il peso dall’etichetta o pesala una volta. I ml non vengono convertiti automaticamente in grammi. Per un piatto senza riferimenti puoi usare la foto AI e verificare la stima.</p>
+<div class="portion-fields mt-3">
+<div>
+<label class="block text-sm text-slate-300 mb-2" for="custom-portion-label">La tua misura</label>
+<input class="input-modern w-full" id="custom-portion-label" maxlength="60" placeholder="es. fetta, vasetto, cucchiaio"/>
+</div>
+<div>
+<label class="block text-sm text-slate-300 mb-2" for="custom-portion-grams">Peso di una unità (g)</label>
+<input class="input-modern w-full" id="custom-portion-grams" inputmode="decimal" min="0.01" placeholder="Dall’etichetta o bilancia" step="any" type="number"/>
+</div>
+</div>
+<p class="text-sm text-red-400 mt-2" id="portion-unit-error" role="alert"></p>
+<button class="portion-chip mt-3" id="save-portion-unit" type="button">Usa questa misura</button>
+</details></section></div>
+</div>
+<footer class="text-center text-slate-500 text-sm mt-16 py-8 border-t border-slate-700/50">
+<p class="mb-2">
+                Database alimenti basato su dati forniti da <a class="text-indigo-400 hover:text-indigo-300" href="https://www.crea.gov.it/" rel="noopener noreferrer" target="_blank">CREA - Alimenti e Nutrizione</a>.
             </p>
-            <p>
-                I dati da scansione codice a barre sono forniti da <a href="https://world.openfoodfacts.org/" target="_blank" rel="noopener noreferrer" class="text-indigo-400 hover:text-indigo-300">Open Food Facts</a>.
+<p>
+                I dati da scansione codice a barre sono forniti da <a class="text-indigo-400 hover:text-indigo-300" href="https://world.openfoodfacts.org/" rel="noopener noreferrer" target="_blank">Open Food Facts</a>.
             </p>
-        </footer>
-    </div>
-    
-    <div id="scanner-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="scanner-title">
-        <div class="modal-content p-8 max-w-xl w-full mx-4">
-            <div class="flex justify-between items-center mb-6">
-                <h3 id="scanner-title" class="text-2xl font-bold text-white">Scansiona Codice</h3>
-                <button id="close-scanner-btn" class="text-white hover:text-slate-300" aria-label="Chiudi scanner">
-                    <i class="fas fa-times text-2xl"></i>
+</footer>
+</div>
+<div aria-labelledby="scanner-title" aria-modal="true" class="modal fixed inset-0 items-center justify-center z-50 hidden" id="scanner-modal" role="dialog">
+<div class="modal-content p-8 max-w-xl w-full mx-4">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-2xl font-bold text-white" id="scanner-title">Scansiona Codice</h3>
+<button aria-label="Chiudi scanner" class="text-white hover:text-slate-300" id="close-scanner-btn">
+<i class="fas fa-times text-2xl"></i>
+</button>
+</div>
+<div class="bg-slate-900 rounded-lg overflow-hidden w-full" id="scanner-reader">
+<!-- Il lettore verrà renderizzato qui -->
+</div>
+<div class="text-center text-slate-300 mt-4 mb-4 h-5" id="scanner-feedback"></div>
+<div class="flex flex-col sm:flex-row gap-4 mt-4">
+<div class="flex-1">
+<label class="sr-only" for="camera-select">Scegli Fotocamera</label>
+<select class="input-modern w-full" id="camera-select"></select>
+</div>
+<button aria-label="Attiva/Disattiva Flash" class="btn-modern bg-slate-600 !px-5" id="toggle-flash-btn">
+<i class="fas fa-bolt"></i>
+</button>
+<button class="btn-modern bg-slate-700 w-full text-white" id="scan-from-file-btn">
+<i class="fas fa-image mr-2"></i> Scansiona da File
                 </button>
-            </div>
-            <div id="scanner-reader" class="bg-slate-900 rounded-lg overflow-hidden w-full">
-                <!-- Il lettore verrà renderizzato qui -->
-            </div>
-            <div id="scanner-feedback" class="text-center text-slate-300 mt-4 mb-4 h-5"></div>
-            <div class="flex flex-col sm:flex-row gap-4 mt-4">
-                <div class="flex-1">
-                    <label for="camera-select" class="sr-only">Scegli Fotocamera</label>
-                    <select id="camera-select" class="input-modern w-full"></select>
-                </div>
-                <button id="toggle-flash-btn" class="btn-modern bg-slate-600 !px-5" aria-label="Attiva/Disattiva Flash">
-                    <i class="fas fa-bolt"></i>
-                </button>
-                <button id="scan-from-file-btn" class="btn-modern bg-slate-700 w-full text-white">
-                    <i class="fas fa-image mr-2"></i> Scansiona da File
-                </button>
-            </div>
-        </div>
-    </div>
-    <input type="file" id="barcode-file-input" class="hidden" accept="image/*">
-
-    <!-- Modal Analisi Foto AI -->
-    <div id="ai-photo-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="ai-photo-title">
-        <div class="modal-content p-8 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-6">
-                <h3 id="ai-photo-title" class="text-2xl font-bold text-white flex items-center gap-3">
-                    <i class="fas fa-camera-retro text-purple-400"></i>
+</div>
+</div>
+</div>
+<input accept="image/*" class="hidden" id="barcode-file-input" type="file"/>
+<!-- Modal Analisi Foto AI -->
+<div aria-labelledby="ai-photo-title" aria-modal="true" class="modal fixed inset-0 items-center justify-center z-50 hidden" id="ai-photo-modal" role="dialog">
+<div class="modal-content p-8 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-2xl font-bold text-white flex items-center gap-3" id="ai-photo-title">
+<i class="fas fa-camera-retro text-purple-400"></i>
                     Analizza Foto AI
                 </h3>
-                <button id="close-ai-photo-btn" class="text-white hover:text-slate-300" aria-label="Chiudi">
-                    <i class="fas fa-times text-2xl"></i>
-                </button>
-            </div>
-
-            <!-- Sezione API Key (visibile solo se non salvata) -->
-            <div id="ai-api-key-section" class="hidden mb-6 p-4 bg-amber-900/30 border border-amber-700/50 rounded-xl">
-                <p class="text-amber-300 text-sm mb-3">
-                    <i class="fas fa-key mr-2"></i>
+<button aria-label="Chiudi" class="text-white hover:text-slate-300" id="close-ai-photo-btn">
+<i class="fas fa-times text-2xl"></i>
+</button>
+</div>
+<!-- Sezione API Key (visibile solo se non salvata) -->
+<div class="hidden mb-6 p-4 bg-amber-900/30 border border-amber-700/50 rounded-xl" id="ai-api-key-section">
+<p class="text-amber-300 text-sm mb-3">
+<i class="fas fa-key mr-2"></i>
                     Inserisci la tua API key di Google AI Studio per usare questa funzione.
                 </p>
-                <div class="flex gap-2">
-                    <input type="password" id="gemini-api-key-input" class="input-modern flex-1 text-sm" placeholder="AIza...">
-                    <button id="save-api-key-btn" class="btn-modern btn-primary !py-2 !px-4 text-sm">Salva</button>
-                </div>
-                <p class="text-slate-500 text-xs mt-2">La chiave viene salvata solo sul tuo dispositivo.</p>
-            </div>
-
-            <!-- Area upload foto -->
-            <div id="ai-photo-upload-area" class="mb-6">
-                <div id="ai-photo-drop-zone" class="relative border-2 border-dashed border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-purple-500 transition-colors">
-                    <input type="file" id="ai-photo-input" accept="image/*" capture="environment" class="absolute inset-0 opacity-0 cursor-pointer">
-                    <div id="ai-photo-placeholder">
-                        <i class="fas fa-camera text-4xl text-slate-500 mb-3"></i>
-                        <p class="text-slate-400">Tocca per scattare una foto o carica un'immagine</p>
-                        <p class="text-slate-500 text-sm mt-1">JPG, PNG, WebP</p>
-                    </div>
-                    <img id="ai-photo-preview" class="hidden max-h-64 mx-auto rounded-lg object-contain pointer-events-none">
-                </div>
-            </div>
-
-            <!-- Bottone Analizza -->
-            <button id="ai-analyze-btn" class="btn-modern w-full mb-6 hidden text-white" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
-                <i class="fas fa-magic mr-2"></i>
+<div class="flex gap-2">
+<input aria-label="AIza..." class="input-modern flex-1 text-sm" id="gemini-api-key-input" placeholder="AIza..." type="password"/>
+<button class="btn-modern btn-primary !py-2 !px-4 text-sm" id="save-api-key-btn">Salva</button>
+</div>
+<p class="text-slate-500 text-xs mt-2">La chiave viene salvata solo sul tuo dispositivo.</p>
+</div>
+<!-- Area upload foto -->
+<div class="mb-6" id="ai-photo-upload-area">
+<div class="relative border-2 border-dashed border-slate-600 rounded-xl p-8 text-center cursor-pointer hover:border-purple-500 transition-colors" id="ai-photo-drop-zone">
+<input accept="image/*" capture="environment" class="absolute inset-0 opacity-0 cursor-pointer" id="ai-photo-input" type="file"/>
+<div id="ai-photo-placeholder">
+<i class="fas fa-camera text-4xl text-slate-500 mb-3"></i>
+<p class="text-slate-400">Tocca per scattare una foto o carica un'immagine</p>
+<p class="text-slate-500 text-sm mt-1">JPG, PNG, WebP</p>
+</div>
+<img class="hidden max-h-64 mx-auto rounded-lg object-contain pointer-events-none" id="ai-photo-preview"/>
+</div>
+</div>
+<!-- Bottone Analizza -->
+<button class="btn-modern w-full mb-6 hidden text-white" id="ai-analyze-btn" style="background: linear-gradient(135deg, #7c3aed, #4f46e5);">
+<i class="fas fa-magic mr-2"></i>
                 Analizza con Gemini
             </button>
-
-            <!-- Stato di caricamento -->
-            <div id="ai-loading" class="hidden text-center py-6">
-                <div class="loader mb-4"></div>
-                <p class="text-slate-400">Gemini sta analizzando il tuo pasto...</p>
-            </div>
-
-            <!-- Risultati -->
-            <div id="ai-results" class="hidden">
-                <div class="bg-slate-800/50 rounded-xl p-4 mb-4">
-                    <div class="flex justify-between items-start mb-2">
-                        <h4 id="ai-food-name" class="text-lg font-bold text-slate-100"></h4>
-                        <span id="ai-confidence-badge" class="text-xs px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0"></span>
-                    </div>
-                    <p id="ai-food-quantity" class="text-slate-400 text-sm"></p>
-                    <label for="ai-quantity-correction" class="block text-sm text-slate-300 mt-3 mb-2">Correggi la quantità stimata (g)</label>
-                    <input id="ai-quantity-correction" type="number" min="0.01" step="any" inputmode="decimal" class="input-modern w-full">
-                    <p class="text-xs text-slate-400 mt-2">La foto produce una stima: verifica quantità, ingredienti e condimenti. Il diario conserverà l’indicazione “Stima da foto”.</p>
-                </div>
-
-                <div class="grid grid-cols-2 gap-3 mb-4" id="ai-macros-grid"></div>
-
-                <!-- Domande di chiarimento -->
-                <div id="ai-followup-section" class="hidden mb-4">
-                    <div class="bg-indigo-900/30 border border-indigo-700/50 rounded-xl p-4">
-                        <p class="text-indigo-300 font-semibold mb-2">
-                            <i class="fas fa-question-circle mr-2"></i>
+<!-- Stato di caricamento -->
+<div class="hidden text-center py-6" id="ai-loading">
+<div class="loader mb-4"></div>
+<p class="text-slate-400">Gemini sta analizzando il tuo pasto...</p>
+</div>
+<!-- Risultati -->
+<div class="hidden" id="ai-results">
+<div class="bg-slate-800/50 rounded-xl p-4 mb-4">
+<div class="flex justify-between items-start mb-2">
+<h4 class="text-lg font-bold text-slate-100" id="ai-food-name"></h4>
+<span class="text-xs px-2 py-1 rounded-full font-semibold ml-2 flex-shrink-0" id="ai-confidence-badge"></span>
+</div>
+<p class="text-slate-400 text-sm" id="ai-food-quantity"></p>
+<label class="block text-sm text-slate-300 mt-3 mb-2" for="ai-quantity-correction">Correggi la quantità stimata (g)</label>
+<input class="input-modern w-full" id="ai-quantity-correction" inputmode="decimal" min="0.01" step="any" type="number"/>
+<p class="text-xs text-slate-400 mt-2">La foto produce una stima: verifica quantità, ingredienti e condimenti. Il diario conserverà l’indicazione “Stima da foto”.</p>
+</div>
+<div class="grid grid-cols-2 gap-3 mb-4" id="ai-macros-grid"></div>
+<!-- Domande di chiarimento -->
+<div class="hidden mb-4" id="ai-followup-section">
+<div class="bg-indigo-900/30 border border-indigo-700/50 rounded-xl p-4">
+<p class="text-indigo-300 font-semibold mb-2">
+<i class="fas fa-question-circle mr-2"></i>
                             Gemini ha alcune domande per essere più preciso:
                         </p>
-                        <ul id="ai-questions-list" class="text-slate-300 text-sm space-y-1 mb-4 list-disc list-inside"></ul>
-                        <textarea id="ai-user-answer" class="input-modern w-full text-sm" rows="2" placeholder="La tua risposta..."></textarea>
-                        <button id="ai-refine-btn" class="btn-modern btn-primary w-full mt-3 !py-2 text-sm">
-                            <i class="fas fa-sync mr-2"></i>
+<ul class="text-slate-300 text-sm space-y-1 mb-4 list-disc list-inside" id="ai-questions-list"></ul>
+<textarea class="input-modern w-full text-sm" id="ai-user-answer" placeholder="La tua risposta..." rows="2"></textarea>
+<button class="btn-modern btn-primary w-full mt-3 !py-2 text-sm" id="ai-refine-btn">
+<i class="fas fa-sync mr-2"></i>
                             Aggiorna stima
                         </button>
-                    </div>
-                </div>
-
-                <p id="ai-notes" class="text-slate-500 text-xs mb-4 hidden italic"></p>
-
-                <button id="ai-use-data-btn" class="btn-modern btn-success w-full !py-4 text-lg">
-                    <i class="fas fa-check-circle mr-2"></i>
+</div>
+</div>
+<p class="text-slate-500 text-xs mb-4 hidden italic" id="ai-notes"></p>
+<button class="btn-modern btn-success w-full !py-4 text-lg" id="ai-use-data-btn">
+<i class="fas fa-check-circle mr-2"></i>
                     Usa questi dati
                 </button>
-            </div>
-
-            <!-- Errore -->
-            <div id="ai-error" class="hidden bg-red-900/30 border border-red-700/50 rounded-xl p-4 text-red-300 text-sm">
-                <i class="fas fa-exclamation-triangle mr-2"></i>
-                <span id="ai-error-message"></span>
-            </div>
-
-            <!-- Cambia chiave -->
-            <div class="mt-6 pt-4 border-t border-slate-700/50 text-center">
-                <button id="ai-reset-key-btn" class="text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                    <i class="fas fa-key mr-1"></i>Cambia API key
+</div>
+<!-- Errore -->
+<div class="hidden bg-red-900/30 border border-red-700/50 rounded-xl p-4 text-red-300 text-sm" id="ai-error">
+<i class="fas fa-exclamation-triangle mr-2"></i>
+<span id="ai-error-message"></span>
+</div>
+<!-- Cambia chiave -->
+<div class="mt-6 pt-4 border-t border-slate-700/50 text-center">
+<button class="text-xs text-slate-500 hover:text-slate-300 transition-colors" id="ai-reset-key-btn">
+<i class="fas fa-key mr-1"></i>Cambia API key
                 </button>
-            </div>
-        </div>
-    </div>
-
-    <div id="toast" class="toast fixed bottom-8 left-8 p-4 rounded-2xl opacity-0 transform translate-y-10 transition-all duration-500 z-50 flex items-center gap-3" role="alert" aria-live="assertive">
-        <div class="w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center">
-            <i class="fas fa-check text-white text-sm"></i>
-        </div>
-        <span class="font-medium text-slate-100">Messaggio di notifica</span>
-    </div>
-    
-    <div id="goals-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div class="modal-content p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h3 id="modal-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Obiettivi</h3>
-            <div class="space-y-4">
-                <div>
-                    <label for="goal-calories" class="block text-sm font-medium text-slate-300 mb-2">Calorie (calcolate)</label>
-                    <input type="number" id="goal-calories" class="input-modern w-full bg-slate-700 cursor-not-allowed" placeholder="Calcolate automaticamente" readonly>
-                </div>
-                <div>
-                    <label for="goal-proteins" class="block text-sm font-medium text-slate-300 mb-2">Proteine (g)</label>
-                    <input type="number" id="goal-proteins" class="input-modern w-full" placeholder="es. 150">
-                </div>
-                <div>
-                    <label for="goal-carbs" class="block text-sm font-medium text-slate-300 mb-2">Carboidrati (g)</label>
-                    <input type="number" id="goal-carbs" class="input-modern w-full" placeholder="es. 250">
-                </div>
-                <div>
-                    <label for="goal-fats" class="block text-sm font-medium text-slate-300 mb-2">Grassi (g)</label>
-                    <input type="number" id="goal-fats" class="input-modern w-full" placeholder="es. 70">
-                </div>
-                <div>
-                    <label for="goal-fibers" class="block text-sm font-medium text-slate-300 mb-2">Fibre (g)</label>
-                    <input type="number" id="goal-fibers" class="input-modern w-full" placeholder="es. 30">
-                </div>
-                <div>
-                    <label for="goal-water" class="block text-sm font-medium text-slate-300 mb-2">Bicchieri d'acqua (~200mL)</label>
-                    <input type="number" id="goal-water" class="input-modern w-full" placeholder="es. 8">
-                </div>
-
-                <div class="mt-6 pt-6 border-t border-slate-700/50">
-                    <div class="flex justify-between mb-3">
-                        <span class="font-medium text-slate-300">Distribuzione Obiettivi Macro</span>
-                    </div>
-                    <div id="modal-macro-distribution-bar" class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner">
-                        <div id="modal-macro-dist-proteins" class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: 33.33%;"></div>
-                        <div id="modal-macro-dist-carbs" class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: 33.33%;"></div>
-                        <div id="modal-macro-dist-fats" class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: 33.33%;"></div>
-                    </div>
-                     <div class="flex justify-between text-xs mt-2 text-slate-400 px-1">
-                        <span><i class="fas fa-circle text-green-500 mr-1 text-[.6rem]"></i>P: <span id="modal-macro-dist-proteins-perc">0%</span></span>
-                        <span><i class="fas fa-circle text-yellow-500 mr-1 text-[.6rem]"></i>C: <span id="modal-macro-dist-carbs-perc">0%</span></span>
-                        <span><i class="fas fa-circle text-red-500 mr-1 text-[.6rem]"></i>G: <span id="modal-macro-dist-fats-perc">0%</span></span>
-                    </div>
-                </div>
-            </div>
-            <div class="flex gap-4 mt-8">
-                <button id="cancel-goals-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
-                <button id="save-goals-btn" class="btn-modern btn-primary flex-1">Salva</button>
-            </div>
-        </div>
-    </div>
-    
-    <div id="confirmation-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
-        <div class="modal-content p-8 max-w-sm w-full mx-4">
-            <h3 id="confirmation-title" class="text-xl font-bold mb-4 text-white">Conferma Azione</h3>
-            <p id="confirmation-message" class="text-slate-300 mb-8">Sei sicuro di voler procedere?</p>
-            <div class="flex gap-4">
-                <button id="cancel-confirmation-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
-                <button id="confirm-action-btn" class="btn-modern btn-danger flex-1">Conferma</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="edit-meal-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="edit-meal-title">
-        <div class="modal-content p-8 max-w-md w-full mx-4">
-            <h3 id="edit-meal-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Pasto</h3>
-            <div id="edit-meal-form-container" class="space-y-6">
-                <div>
-                    <label for="edit-meal-name-input" class="block text-sm font-semibold text-slate-300 mb-3">Nome Alimento</label>
-                    <input type="text" id="edit-meal-name-input" class="input-modern w-full">
-                </div>
-                <div id="edit-standard-meal-fields">
-                    <label for="edit-meal-quantity" class="block text-sm font-semibold text-slate-300 mb-3">Quantità (g)</label>
-                    <input type="number" id="edit-meal-quantity" class="input-modern w-full" placeholder="100">
-                </div>
-                <div id="edit-custom-meal-fields" class="hidden space-y-4">
-                    <div class="grid grid-cols-2 gap-4">
-                        <input type="number" id="edit-meal-calories" class="input-modern w-full" placeholder="Calorie per 100 g" aria-label="Calorie per 100 grammi">
-                        <input type="number" id="edit-meal-proteins" class="input-modern w-full" placeholder="Proteine per 100 g" aria-label="Proteine per 100 grammi">
-                        <input type="number" id="edit-meal-carbs" class="input-modern w-full" placeholder="Carboidrati per 100 g" aria-label="Carboidrati per 100 grammi">
-                        <input type="number" id="edit-meal-fats" class="input-modern w-full" placeholder="Grassi per 100 g" aria-label="Grassi per 100 grammi">
-                    </div>
-                </div>
-                <div>
-                    <label for="edit-meal-type" class="block text-sm font-semibold text-slate-300 mb-3">Tipo Pasto</label>
-                    <select id="edit-meal-type" class="input-modern w-full">
-                        <option value="🌅 Colazione">🌅 Colazione</option>
-                        <option value="🍽️ Pranzo">🍽️ Pranzo</option>
-                        <option value="🌙 Cena">🌙 Cena</option>
-                        <option value="🍪 Spuntino">🍪 Spuntino</option>
-                    </select>
-                </div>
-            </div>
-            <div class="flex gap-4 mt-8">
-                <button id="cancel-edit-meal-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
-                <button id="save-edit-meal-btn" class="btn-modern btn-primary flex-1">Salva Modifiche</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="edit-food-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="edit-food-title">
-        <div class="modal-content p-8 max-w-md w-full mx-4">
-            <h3 id="edit-food-title" class="text-2xl font-bold mb-8 text-center text-white">Modifica Alimento</h3>
-            <div id="edit-food-form-container" class="space-y-4">
-                <div>
-                    <label for="edit-food-name" class="input-label">Nome Alimento</label>
-                    <input type="text" id="edit-food-name" class="input-modern w-full">
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label for="edit-food-calories" class="input-label">Calorie (per 100g)</label>
-                        <input type="number" id="edit-food-calories" class="input-modern w-full">
-                    </div>
-                    <div>
-                        <label for="edit-food-proteins" class="input-label">Proteine (g)</label>
-                        <input type="number" id="edit-food-proteins" class="input-modern w-full">
-                    </div>
-                    <div>
-                        <label for="edit-food-carbs" class="input-label">Carboidrati (g)</label>
-                        <input type="number" id="edit-food-carbs" class="input-modern w-full">
-                    </div>
-                    <div>
-                        <label for="edit-food-fats" class="input-label">Grassi (g)</label>
-                        <input type="number" id="edit-food-fats" class="input-modern w-full">
-                    </div>
-                     <div>
-                        <label for="edit-food-fibers" class="input-label">Fibre (g)</label>
-                        <input type="number" id="edit-food-fibers" class="input-modern w-full">
-                    </div>
-                </div>
-            </div>
-            <div class="flex gap-4 mt-8">
-                <button id="cancel-edit-food-btn" class="btn-modern bg-slate-600 text-white flex-1">Annulla</button>
-                <button id="save-edit-food-btn" class="btn-modern btn-primary flex-1">Salva Modifiche</button>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js" defer></script>
-    <script type="module" src="script.js"></script>
+</div>
+</div>
+</div>
+<div aria-live="assertive" class="toast fixed bottom-8 left-8 p-4 rounded-2xl opacity-0 transform translate-y-10 transition-all duration-500 z-50 flex items-center gap-3" id="toast" role="alert">
+<div class="w-8 h-8 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center">
+<i class="fas fa-check text-white text-sm"></i>
+</div>
+<span class="font-medium text-slate-100">Messaggio di notifica</span>
+</div>
+<div aria-labelledby="modal-title" aria-modal="true" class="modal fixed inset-0 items-center justify-center z-50 hidden" id="goals-modal" role="dialog">
+<div class="modal-content p-8 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+<h3 class="text-2xl font-bold mb-8 text-center text-white" id="modal-title">Modifica Obiettivi</h3>
+<div class="space-y-4">
+<div>
+<label class="block text-sm font-medium text-slate-300 mb-2" for="goal-calories">Calorie (calcolate)</label>
+<input class="input-modern w-full bg-slate-700 cursor-not-allowed" id="goal-calories" placeholder="Calcolate automaticamente" readonly="" type="number"/>
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-300 mb-2" for="goal-proteins">Proteine (g)</label>
+<input class="input-modern w-full" id="goal-proteins" placeholder="es. 150" type="number"/>
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-300 mb-2" for="goal-carbs">Carboidrati (g)</label>
+<input class="input-modern w-full" id="goal-carbs" placeholder="es. 250" type="number"/>
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-300 mb-2" for="goal-fats">Grassi (g)</label>
+<input class="input-modern w-full" id="goal-fats" placeholder="es. 70" type="number"/>
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-300 mb-2" for="goal-fibers">Fibre (g)</label>
+<input class="input-modern w-full" id="goal-fibers" placeholder="es. 30" type="number"/>
+</div>
+<div>
+<label class="block text-sm font-medium text-slate-300 mb-2" for="goal-water">Bicchieri d'acqua (~200mL)</label>
+<input class="input-modern w-full" id="goal-water" placeholder="es. 8" type="number"/>
+</div>
+<div class="mt-6 pt-6 border-t border-slate-700/50">
+<div class="flex justify-between mb-3">
+<span class="font-medium text-slate-300">Distribuzione Obiettivi Macro</span>
+</div>
+<div class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner" id="modal-macro-distribution-bar">
+<div class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" id="modal-macro-dist-proteins" style="background: #718f7b; width: 33.33%;"></div>
+<div class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" id="modal-macro-dist-carbs" style="background: #b29b70; width: 33.33%;"></div>
+<div class="flex items-center justify-center text-xs font-bold text-white transition-all duration-500" id="modal-macro-dist-fats" style="background: #8b8f9c; width: 33.33%;"></div>
+</div>
+<div class="flex justify-between text-xs mt-2 text-slate-400 px-1">
+<span><i class="fas fa-circle text-green-500 mr-1 text-[.6rem]"></i>P: <span id="modal-macro-dist-proteins-perc">0%</span></span>
+<span><i class="fas fa-circle text-yellow-500 mr-1 text-[.6rem]"></i>C: <span id="modal-macro-dist-carbs-perc">0%</span></span>
+<span><i class="fas fa-circle text-red-500 mr-1 text-[.6rem]"></i>G: <span id="modal-macro-dist-fats-perc">0%</span></span>
+</div>
+</div>
+</div>
+<div class="flex gap-4 mt-8">
+<button class="btn-modern bg-slate-600 text-white flex-1" id="cancel-goals-btn">Annulla</button>
+<button class="btn-modern btn-primary flex-1" id="save-goals-btn">Salva</button>
+</div>
+</div>
+</div>
+<div aria-labelledby="confirmation-title" aria-modal="true" class="modal fixed inset-0 items-center justify-center z-50 hidden" id="confirmation-modal" role="dialog">
+<div class="modal-content p-8 max-w-sm w-full mx-4">
+<h3 class="text-xl font-bold mb-4 text-white" id="confirmation-title">Conferma Azione</h3>
+<p class="text-slate-300 mb-8" id="confirmation-message">Sei sicuro di voler procedere?</p>
+<div class="flex gap-4">
+<button class="btn-modern bg-slate-600 text-white flex-1" id="cancel-confirmation-btn">Annulla</button>
+<button class="btn-modern btn-danger flex-1" id="confirm-action-btn">Conferma</button>
+</div>
+</div>
+</div>
+<div aria-labelledby="edit-meal-title" aria-modal="true" class="modal fixed inset-0 items-center justify-center z-50 hidden" id="edit-meal-modal" role="dialog">
+<div class="modal-content p-8 max-w-md w-full mx-4">
+<h3 class="text-2xl font-bold mb-8 text-center text-white" id="edit-meal-title">Modifica Pasto</h3>
+<div class="space-y-6" id="edit-meal-form-container">
+<div>
+<label class="block text-sm font-semibold text-slate-300 mb-3" for="edit-meal-name-input">Nome Alimento</label>
+<input class="input-modern w-full" id="edit-meal-name-input" type="text"/>
+</div>
+<div id="edit-standard-meal-fields">
+<label class="block text-sm font-semibold text-slate-300 mb-3" for="edit-meal-quantity">Quantità (g)</label>
+<input class="input-modern w-full" id="edit-meal-quantity" placeholder="100" type="number"/>
+</div>
+<div class="hidden space-y-4" id="edit-custom-meal-fields">
+<div class="grid grid-cols-2 gap-4">
+<input aria-label="Calorie per 100 grammi" class="input-modern w-full" id="edit-meal-calories" placeholder="Calorie per 100 g" type="number"/>
+<input aria-label="Proteine per 100 grammi" class="input-modern w-full" id="edit-meal-proteins" placeholder="Proteine per 100 g" type="number"/>
+<input aria-label="Carboidrati per 100 grammi" class="input-modern w-full" id="edit-meal-carbs" placeholder="Carboidrati per 100 g" type="number"/>
+<input aria-label="Grassi per 100 grammi" class="input-modern w-full" id="edit-meal-fats" placeholder="Grassi per 100 g" type="number"/>
+</div>
+</div>
+<div>
+<label class="block text-sm font-semibold text-slate-300 mb-3" for="edit-meal-type">Tipo Pasto</label>
+<select class="input-modern w-full" id="edit-meal-type">
+<option value="🌅 Colazione">🌅 Colazione</option>
+<option value="🍽️ Pranzo">🍽️ Pranzo</option>
+<option value="🌙 Cena">🌙 Cena</option>
+<option value="🍪 Spuntino">🍪 Spuntino</option>
+</select>
+</div>
+</div>
+<div class="flex gap-4 mt-8">
+<button class="btn-modern bg-slate-600 text-white flex-1" id="cancel-edit-meal-btn">Annulla</button>
+<button class="btn-modern btn-primary flex-1" id="save-edit-meal-btn">Salva Modifiche</button>
+</div>
+</div>
+</div>
+<div aria-labelledby="edit-food-title" aria-modal="true" class="modal fixed inset-0 items-center justify-center z-50 hidden" id="edit-food-modal" role="dialog">
+<div class="modal-content p-8 max-w-md w-full mx-4">
+<h3 class="text-2xl font-bold mb-8 text-center text-white" id="edit-food-title">Modifica Alimento</h3>
+<div class="space-y-4" id="edit-food-form-container">
+<div>
+<label class="input-label" for="edit-food-name">Nome Alimento</label>
+<input class="input-modern w-full" id="edit-food-name" type="text"/>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div>
+<label class="input-label" for="edit-food-calories">Calorie (per 100g)</label>
+<input class="input-modern w-full" id="edit-food-calories" type="number"/>
+</div>
+<div>
+<label class="input-label" for="edit-food-proteins">Proteine (g)</label>
+<input class="input-modern w-full" id="edit-food-proteins" type="number"/>
+</div>
+<div>
+<label class="input-label" for="edit-food-carbs">Carboidrati (g)</label>
+<input class="input-modern w-full" id="edit-food-carbs" type="number"/>
+</div>
+<div>
+<label class="input-label" for="edit-food-fats">Grassi (g)</label>
+<input class="input-modern w-full" id="edit-food-fats" type="number"/>
+</div>
+<div>
+<label class="input-label" for="edit-food-fibers">Fibre (g)</label>
+<input class="input-modern w-full" id="edit-food-fibers" type="number"/>
+</div>
+</div>
+</div>
+<div class="flex gap-4 mt-8">
+<button class="btn-modern bg-slate-600 text-white flex-1" id="cancel-edit-food-btn">Annulla</button>
+<button class="btn-modern btn-primary flex-1" id="save-edit-food-btn">Salva Modifiche</button>
+</div>
+</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script defer="" src="https://unpkg.com/html5-qrcode/html5-qrcode.min.js"></script>
+<script defer="" src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="script.js" type="module"></script>
 </body>
 </html>

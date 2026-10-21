@@ -8,6 +8,7 @@ import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
 import { firebaseConfig } from './firebase-config.js';
 import { startScanner, stopScanner, handleCameraChange, toggleFlash, handleFileSelect } from './modules/scanner.js';
 import { getGeminiApiKey, saveGeminiApiKey, analyzePhoto, refineWithAnswer, parseResponse } from './modules/aiPhotoAnalysis.js';
+import { createMealEntry } from './modules/mealEntry.js';
 import { createPortionPicker } from './modules/portionPicker.js';
 import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js';
 
@@ -206,7 +207,19 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // --- GESTIONE EVENTI ---
 
+let mealEntry = null;
 function setupListeners() {
+    mealEntry = createMealEntry(document, { onCustomContinue: () => {
+        const name = document.getElementById('custom-meal-name').value.trim();
+        const valid = ['calories', 'proteins', 'carbs', 'fats'].every(key => {
+            const value = document.getElementById(`custom-meal-${key}`).value;
+            return value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
+        });
+        document.getElementById('custom-meal-error').textContent = name && valid ? '' : 'Inserisci il nome e valori nutrizionali validi per 100 g (anche zero).';
+        if (!name || !valid) return false;
+        updateMealPreview();
+        return { name };
+    } });
     portionPicker = createPortionPicker(document, updateMealPreview);
     // Dichiaro le variabili per gli input qui per evitare errori di riferimento
     const foodSearchInput = document.getElementById('food-search');
@@ -301,7 +314,7 @@ function setupListeners() {
         itemRenderer: (item) => {
             if (item.isRecipe) {
                 return `
-                <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
+                <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
                     <i class="fas fa-book text-orange-400 mr-3"></i>
                     <div>
                         <div class="font-medium text-slate-200">${item.name}</div>
@@ -310,7 +323,7 @@ function setupListeners() {
                 </div>`;
             }
             return `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
                     <div class="font-medium text-slate-200">${item.name}</div>
@@ -352,7 +365,7 @@ function setupListeners() {
             showFoodLookupDetails(item);
         },
         itemRenderer: (item) => `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
                     <div class="font-medium text-slate-200">${item.name}</div>
@@ -752,7 +765,7 @@ async function addMeal() {
         }
 
     } else {
-        if (!selectedFood || isNaN(quantity) || quantity <= 0) {
+        if (!selectedFood || !Number.isFinite(quantity) || quantity <= 0) {
             return showToast('Seleziona un alimento e inserisci una quantità valida.', true);
         }
 
@@ -848,6 +861,7 @@ function selectMealFood(food, saved = null) {
     const previous = saved || readPortionHistory(localStorage, userId).find(entry => entry.key === foodKey(food));
     portionPicker.select(food, previous);
     updateMealPreview();
+    mealEntry?.select(food);
 }
 
 function renderRecentPortions() {
@@ -1590,7 +1604,7 @@ function renderSelectedDayMeals() {
                         <p class="font-medium text-slate-200 break-words">${escapeText(meal.name)}</p>
                         <p class="text-sm text-slate-300 mt-1">${escapeText(portionDescription(meal.portion) || `${formatAmount(meal.quantity || 0)} g`)}${meal.estimated ? ' · Stima da foto' : ''}</p>
                         <p class="text-xs md:text-sm text-slate-400 mt-1 meal-nutrition-details">
-                            Cal:${calculated.calories.toFixed(0)} P:${calculated.proteins.toFixed(1)}g C:${calculated.carbs.toFixed(1)}g G:${calculated.fats.toFixed(1)}g F:${calculated.fibers.toFixed(1)}g
+                            ${calculated.calories.toFixed(0)} kcal · P ${calculated.proteins.toFixed(1)} · C ${calculated.carbs.toFixed(1)} · G ${calculated.fats.toFixed(1)}
                         </p>
                     </div>
                     <div class="meal-actions flex-shrink-0">
@@ -1607,7 +1621,7 @@ function renderSelectedDayMeals() {
         
         // Aggiorna solo il contenuto della lista e dei totali, preservando la struttura.
         listContainer.innerHTML = mealsHTML;
-        totalsContainer.innerHTML = `Cal:${categoryTotals.calories.toFixed(0)} P:${categoryTotals.proteins.toFixed(1)}g C:${categoryTotals.carbs.toFixed(1)}g G:${categoryTotals.fats.toFixed(1)}g F:${categoryTotals.fibers.toFixed(1)}g`;
+        totalsContainer.innerHTML = `${categoryTotals.calories.toFixed(0)} kcal`;
 
         // Applica l'animazione di entrata ai nuovi elementi
         const newItems = listContainer.querySelectorAll('.meal-item.is-entering');
@@ -1648,9 +1662,9 @@ function renderRecipes() {
                 <div class="mt-4">
                     <p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro (Calorie)</p>
                     <div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
-                        <div class="transition-all duration-500" style="background: linear-gradient(90deg, #10b981, #059669); width: ${proteinPerc.toFixed(2)}%;" title="Proteine: ${proteinPerc.toFixed(0)}%"></div>
-                        <div class="transition-all duration-500" style="background: linear-gradient(90deg, #f59e0b, #d97706); width: ${carbPerc.toFixed(2)}%;" title="Carboidrati: ${carbPerc.toFixed(0)}%"></div>
-                        <div class="transition-all duration-500" style="background: linear-gradient(90deg, #ef4444, #dc2626); width: ${fatPerc.toFixed(2)}%;" title="Grassi: ${fatPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: #718f7b; width: ${proteinPerc.toFixed(2)}%;" title="Proteine: ${proteinPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: #b29b70; width: ${carbPerc.toFixed(2)}%;" title="Carboidrati: ${carbPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: #8b8f9c; width: ${fatPerc.toFixed(2)}%;" title="Grassi: ${fatPerc.toFixed(0)}%"></div>
                     </div>
                     <div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
                         <span>P: ${proteinPerc.toFixed(0)}%</span>
@@ -1745,6 +1759,8 @@ function updateNutritionProgress() {
         triggerFlashAnimation(id);
     };
 
+    document.getElementById('diary-energy-goal').textContent = `Obiettivo: ${nutritionGoals.calories} kcal`;
+    document.getElementById('diary-energy-progress').value = Math.min(100, totals.calories / (nutritionGoals.calories || 1) * 100);
     updateAndAnimateTotal('total-calories', totals.calories, 0);
     updateAndAnimateTotal('total-proteins', totals.proteins, 1);
     updateAndAnimateTotal('total-carbs', totals.carbs, 1);
@@ -2001,6 +2017,7 @@ function handleDateChange(e) {
 }
 
 function resetAppData() {
+    resetAddMealForm();
     allMeals = [];
     recipes = [];
     dailyMealsCache = {}; // Pulisce la cache al logout
@@ -2419,7 +2436,7 @@ function setupIngredientSearch(ingredientInput) {
             updateRecipeBuilderMacroBar();
         },
         itemRenderer: (item) => `
-            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" data-item-id="${item.id}">
+            <div class="search-item p-4 hover:bg-slate-700 cursor-pointer flex items-center" role="button" tabindex="0" data-item-id="${item.id}">
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
                     <div class="font-medium text-slate-200">${item.name}</div>
@@ -2499,7 +2516,6 @@ function resetAddMealForm() {
     portionPicker.select();
     document.getElementById('search-results').style.display = 'none';
     updateMealPreview(); // Nasconde l'anteprima
-    document.getElementById('food-search').focus();
 
     // Imposta il tipo di pasto in base all'orario corrente
     document.getElementById('meal-type').value = getDefaultMealTypeByTime();
@@ -2514,6 +2530,7 @@ function resetAddMealForm() {
     if (isCustomMealMode) {
         toggleCustomMealForm(); // Torna alla modalità di ricerca
     }
+    mealEntry?.reset();
 }
 
 function initializeMealTypeByTime() {
@@ -2674,7 +2691,7 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
         if (searchTerm.length >= 2) {
             const results = await searchFunction(searchTerm);
             // Se nel frattempo è partita un'altra ricerca, ignora questi risultati
-            if (generation !== searchGeneration) return;
+            if (generation !== searchGeneration || !inputElement.getClientRects().length) return;
             currentResults = results;
             const renderedHTML = currentResults.length > 0 ? currentResults.map(itemRenderer).join('') : `<div class="p-4 text-slate-500">Nessun risultato.</div>`;
 
@@ -2697,8 +2714,8 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
                 'width': inputRect.width + 'px',
                 'max-height': '300px',
                 'min-height': '50px',
-                'background-color': 'rgba(15, 23, 42, 0.95)',
-                'border': '1px solid rgba(148, 163, 184, 0.1)',
+                'background-color': 'var(--surface)',
+                'border': '1px solid var(--line)',
                 'border-radius': '16px',
                 'z-index': '2147483647',
                 'display': 'block',
@@ -2739,6 +2756,12 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
                 window.removeEventListener('resize', updatePosition);
             };
 
+            dynamicDropdown.addEventListener('keydown', event => {
+                if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('.search-item')) {
+                    event.preventDefault(); event.target.closest('.search-item').click();
+                }
+                if (event.key === 'Escape') { dynamicDropdown._cleanup?.(); dynamicDropdown.remove(); dynamicDropdown = null; inputElement.focus(); }
+            });
             // Add click handler to dynamic dropdown
             dynamicDropdown.addEventListener('click', (e) => {
                 const itemElement = e.target.closest('.search-item');
@@ -2765,6 +2788,11 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
         }
     }, 500);
 
+    inputElement.addEventListener('keydown', event => {
+        if (event.key === 'ArrowDown' && dynamicDropdown) {
+            event.preventDefault(); dynamicDropdown.querySelector('.search-item')?.focus();
+        }
+    });
     inputElement.addEventListener('input', (e) => {
         debouncedSearch(e.target.value.toLowerCase());
     });
@@ -2986,7 +3014,7 @@ function updateMealPreview() {
     const previewContainer = document.getElementById('meal-preview');
     const quantity = portionPicker.quantity();
 
-    if (!selectedFood || isNaN(quantity) || quantity <= 0) {
+    if ((!selectedFood && !isCustomMealMode) || !Number.isFinite(quantity) || quantity <= 0) {
         previewContainer.classList.add('hidden');
         return;
     }
@@ -2995,7 +3023,9 @@ function updateMealPreview() {
 
     const ratio = quantity / 100;
     let foodData;
-    try { foodData = nutritionPer100g(selectedFood); }
+    try { foodData = isCustomMealMode
+        ? Object.fromEntries(['calories', 'proteins', 'carbs', 'fats'].map(key => [key, Number(document.getElementById(`custom-meal-${key}`).value)]))
+        : nutritionPer100g(selectedFood); }
     catch { previewContainer.classList.add('hidden'); return; }
 
     document.getElementById('preview-calories').textContent = ((foodData.calories || 0) * ratio).toFixed(0);
@@ -3006,8 +3036,8 @@ function updateMealPreview() {
 
     // Mostra/nascondi il bottone "Aggiungi ai preferiti" in base a se è già nei preferiti
     const addToFavoritesBtn = document.getElementById('add-to-favorites-btn');
-    const isAlreadyFavorite = favoriteMeals.some(meal => meal.name === selectedFood.name);
-    addToFavoritesBtn.classList.remove('hidden');
+    const isAlreadyFavorite = favoriteMeals.some(meal => meal.name === selectedFood?.name);
+    addToFavoritesBtn.classList.toggle('hidden', isCustomMealMode);
     addToFavoritesBtn.textContent = isAlreadyFavorite ? 'Aggiorna preferito' : 'Salva porzione preferita';
 }
 
