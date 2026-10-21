@@ -13,6 +13,7 @@ NutriTrack is an Italian food diary web application for tracking nutrition and m
 - `npm run init:css` - Initialize Tailwind CSS configuration
 - `npm run build` - Build Tailwind CSS once
 - `npm test` - Run the test suite (`node --test tests/*.test.mjs`)
+- `npm run test:rules` - Test `firestore.rules` against the Firestore emulator (needs Java; Homebrew's openjdk is keg-only, so prefix `PATH="/opt/homebrew/opt/openjdk/bin:$PATH"` if `java` is not on PATH)
 - `python3 tests/ui-preview.py --serve` - Local UI preview with the real `script.js`, mocked Firebase and sample data (localhost:8765)
 
 ### Firebase Deployment
