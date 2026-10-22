@@ -4,7 +4,7 @@
 // - Librerie da CDN (URL con versione fissa): cache-first.
 // - Firestore, Auth, Gemini, Open Food Facts: non intercettati.
 
-const CACHE = 'nutritrack-v1';
+const CACHE = 'nutritrack-v2';
 
 const APP_SHELL = [
     '/',

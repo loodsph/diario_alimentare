@@ -2,28 +2,60 @@ import { getDayBounds, getTodayUTC } from './utils.js';
 
 let calorieChart = null;
 let macroChart = null;
+let themeQuery = null;
+
+// I colori vengono dalle variabili CSS di input.css, così grafici e tema scuro restano allineati.
+function cssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function withAlpha(hex, alpha) {
+    const n = parseInt(hex.replace('#', ''), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+function chartPalette() {
+    return {
+        muted: cssVar('--muted'),
+        line: cssVar('--line'),
+        accent: cssVar('--meal-colazione'),
+        macros: [cssVar('--macro-protein'), cssVar('--macro-carbs'), cssVar('--macro-fat')]
+    };
+}
+
+function applyPalette() {
+    const c = chartPalette();
+    if (calorieChart) {
+        const { scales } = calorieChart.options;
+        scales.y.grid.color = c.line;
+        scales.y.ticks.color = c.muted;
+        scales.x.ticks.color = c.muted;
+        calorieChart.data.datasets[0].borderColor = c.accent;
+        calorieChart.data.datasets[0].backgroundColor = withAlpha(c.accent, 0.12);
+        calorieChart.update();
+    }
+    if (macroChart) {
+        macroChart.options.plugins.legend.labels.color = c.muted;
+        macroChart.data.datasets[0].backgroundColor = c.macros;
+        macroChart.data.datasets[0].borderColor = c.macros;
+        macroChart.update();
+    }
+}
 
 const defaultLineOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { display: false } },
     scales: {
-        y: {
-            beginAtZero: true,
-            grid: { color: 'rgba(148, 163, 184, 0.1)' },
-            ticks: { color: '#7e8c81' }
-        },
-        x: {
-            grid: { display: false },
-            ticks: { color: '#7e8c81' }
-        }
+        y: { beginAtZero: true, grid: {}, ticks: {} },
+        x: { grid: { display: false }, ticks: {} }
     }
 };
 
 const defaultDoughnutOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    plugins: { legend: { position: 'bottom', labels: { padding: 20, color: '#7e8c81' } } },
+    plugins: { legend: { position: 'bottom', labels: { padding: 20 } } },
     cutout: '70%'
 };
 
@@ -35,8 +67,6 @@ export function initCharts(calorieCtx, macroCtx) {
             labels: [],
             datasets: [{
                 label: 'Calorie', data: [],
-                borderColor: '#718f7b',
-                backgroundColor: 'rgba(113, 143, 123, 0.12)',
                 tension: 0.4, fill: true
             }]
         },
@@ -50,14 +80,18 @@ export function initCharts(calorieCtx, macroCtx) {
             labels: ['Proteine', 'Carboidrati', 'Grassi'],
             datasets: [{
                 data: [0, 0, 0],
-                backgroundColor: ['#718f7b', '#b29b70', '#8b8f9c'],
-                borderColor: ['#718f7b', '#b29b70', '#8b8f9c'],
                 borderWidth: 2,
                 hoverOffset: 10
             }]
         },
         options: defaultDoughnutOptions
     });
+
+    applyPalette();
+    if (!themeQuery) {
+        themeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        themeQuery.addEventListener('change', applyPalette);
+    }
 }
 
 export function updateCharts(dailyTotalsCache, selectedDate) {

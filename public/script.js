@@ -1558,9 +1558,9 @@ function renderRecipes() {
                 <div class="mt-4">
                     <p class="text-sm font-medium text-slate-300 mb-2">Distribuzione Macro (Calorie)</p>
                     <div class="flex h-4 rounded-md overflow-hidden bg-slate-700 shadow-inner">
-                        <div class="transition-all duration-500" style="background: #718f7b; width: ${proteinPerc.toFixed(2)}%;" title="Proteine: ${proteinPerc.toFixed(0)}%"></div>
-                        <div class="transition-all duration-500" style="background: #b29b70; width: ${carbPerc.toFixed(2)}%;" title="Carboidrati: ${carbPerc.toFixed(0)}%"></div>
-                        <div class="transition-all duration-500" style="background: #8b8f9c; width: ${fatPerc.toFixed(2)}%;" title="Grassi: ${fatPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: var(--macro-protein); width: ${proteinPerc.toFixed(2)}%;" title="Proteine: ${proteinPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: var(--macro-carbs); width: ${carbPerc.toFixed(2)}%;" title="Carboidrati: ${carbPerc.toFixed(0)}%"></div>
+                        <div class="transition-all duration-500" style="background: var(--macro-fat); width: ${fatPerc.toFixed(2)}%;" title="Grassi: ${fatPerc.toFixed(0)}%"></div>
                     </div>
                     <div class="flex justify-between text-xs mt-1 text-slate-400 px-1">
                         <span>P: ${proteinPerc.toFixed(0)}%</span>

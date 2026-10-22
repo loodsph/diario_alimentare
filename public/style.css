@@ -1666,7 +1666,7 @@ video {
   --page: #fbfaf7;
   --surface: #ffffff;
   --ink: #23362d;
-  --muted: #69736a;
+  --muted: #5f6960;
   --line: #dfe5dc;
   --soft: #edf2e9;
   --accent: #41634c;
@@ -1674,6 +1674,14 @@ video {
   --danger: #a34037;
   --glass-bg: var(--surface);
   --glass-border: var(--line);
+  /* Pasti e macro: tinte diverse e luminosità diverse, almeno 3:1 su --surface. */
+  --meal-colazione: #3f6b4d;
+  --meal-pranzo: #a8762a;
+  --meal-cena: #5a6788;
+  --meal-spuntino: #b0654a;
+  --macro-protein: var(--meal-colazione);
+  --macro-carbs: var(--meal-pranzo);
+  --macro-fat: var(--meal-cena);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1687,6 +1695,10 @@ video {
     --accent: #b1d1a8;
     --on-accent: #1b2e21;
     --danger: #f0a299;
+    --meal-colazione: #8fc09c;
+    --meal-pranzo: #e0b56a;
+    --meal-cena: #a9b6d8;
+    --meal-spuntino: #e39b80;
   }
 }
 
@@ -2492,35 +2504,35 @@ h2, h3 {
 }
 
 .bg-colazione {
-  background: #718f7b;
+  background: var(--meal-colazione);
 }
 
 .bg-pranzo {
-  background: #b29b70;
+  background: var(--meal-pranzo);
 }
 
 .bg-cena {
-  background: #8b8f9c;
+  background: var(--meal-cena);
 }
 
 .bg-spuntino {
-  background: #a6b29a;
+  background: var(--meal-spuntino);
 }
 
 .text-colazione {
-  color: #718f7b;
+  color: var(--meal-colazione);
 }
 
 .text-pranzo {
-  color: #b29b70;
+  color: var(--meal-pranzo);
 }
 
 .text-cena {
-  color: #8b8f9c;
+  color: var(--meal-cena);
 }
 
 .text-spuntino {
-  color: #a6b29a;
+  color: var(--meal-spuntino);
 }
 
 .meal-dist-bar {
