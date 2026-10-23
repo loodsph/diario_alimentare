@@ -12,7 +12,7 @@ import { createMealEntry } from './modules/mealEntry.js';
 import { createPortionPicker } from './modules/portionPicker.js';
 import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js';
 import { emptyTotals, addTotals, mealNutrition, computeRecipeNutrition, findMissingIngredients, groupNutrientDetails, MAX_RECIPE_INGREDIENTS } from './modules/nutrition.js';
-import { searchTokens, sortResults, matchesSearch } from './modules/foodSearch.js';
+import { searchTokens, normalizeQuery, queryToken, sortResults, matchesSearch, buildUsageStats } from './modules/foodSearch.js';
 
 // --- STATO GLOBALE DELL'APPLICAZIONE ---
 // Le variabili sono raggruppate per responsabilità per facilitare la navigazione.
@@ -2586,20 +2586,18 @@ function setupSearchHandler({ inputElement, resultsContainer, searchFunction, on
     });
 }
 
-// Cerca alimenti su Firestore per prefisso del nome e per token, e aggiorna la cache on-demand.
-async function fetchFoodMatches(lowerCaseSearchTerm) {
-    const prefixQuery = query(
+// Cerca alimenti su Firestore per prefisso del nome e per parola, e aggiorna la cache on-demand.
+// I risultati vanno poi filtrati con matchesSearch: la query per parola usa una sola parola del termine.
+async function fetchFoodMatches(searchTerm) {
+    const queries = [query(
         collection(db, 'foods'),
-        where('name_lowercase', '>=', lowerCaseSearchTerm),
-        where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
-        limit(10)
-    );
-    const tokenQuery = query(
-        collection(db, 'foods'),
-        where('search_tokens', 'array-contains', lowerCaseSearchTerm),
-        limit(10)
-    );
-    const snapshots = await Promise.allSettled([getDocs(prefixQuery), getDocs(tokenQuery)]);
+        where('name_lowercase', '>=', searchTerm),
+        where('name_lowercase', '<=', searchTerm + '\uf8ff'),
+        limit(20)
+    )];
+    const token = queryToken(searchTerm);
+    if (token) queries.push(query(collection(db, 'foods'), where('search_tokens', 'array-contains', token), limit(20)));
+    const snapshots = await Promise.allSettled(queries.map(q => getDocs(q)));
 
     const matches = new Map();
     snapshots.forEach(snapshot => {
@@ -2614,19 +2612,25 @@ async function fetchFoodMatches(lowerCaseSearchTerm) {
     return matches;
 }
 
+// Tiene solo i risultati che contengono tutte le parole e li ordina, con in testa gli alimenti usati più spesso.
+function rankResults(results, searchTerm) {
+    const matching = Array.from(results.values()).filter(item => matchesSearch(item, searchTerm));
+    return sortResults(matching, searchTerm, buildUsageStats(allMeals)).slice(0, 20);
+}
+
 async function searchFoodsOnly(searchTerm) {
-    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    const term = normalizeQuery(searchTerm);
     try {
-        const results = await fetchFoodMatches(lowerCaseSearchTerm);
+        const results = await fetchFoodMatches(term);
 
         // Ricerca client-side nella cache per corrispondenze parziali non coperte dalle query Firestore
         foods.forEach(food => {
-            if (!results.has(food.id) && matchesSearch(food, lowerCaseSearchTerm)) {
+            if (!results.has(food.id) && matchesSearch(food, term)) {
                 results.set(food.id, { ...food, isRecipe: false });
             }
         });
 
-        return sortResults(Array.from(results.values()), lowerCaseSearchTerm).slice(0, 20);
+        return rankResults(results, term);
     } catch (error) {
         console.error("Errore in searchFoodsOnly:", error);
         showToast("Errore durante la ricerca nel database.", true);
@@ -2635,19 +2639,19 @@ async function searchFoodsOnly(searchTerm) {
 }
 
 async function searchFoodsAndRecipes(searchTerm) {
-    if (searchTerm.length < 2) return [];
-    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    const term = normalizeQuery(searchTerm);
+    if (term.length < 2) return [];
 
     try {
         const recipesQuery = query(
             collection(db, `users/${userId}/recipes`),
-            where('name_lowercase', '>=', lowerCaseSearchTerm),
-            where('name_lowercase', '<=', lowerCaseSearchTerm + '\uf8ff'),
+            where('name_lowercase', '>=', term),
+            where('name_lowercase', '<=', term + '\uf8ff'),
             orderBy('name_lowercase'),
             limit(10)
         );
         const [foodMatches, recipesSnapshot] = await Promise.all([
-            fetchFoodMatches(lowerCaseSearchTerm),
+            fetchFoodMatches(term),
             getDocs(recipesQuery).catch(error => {
                 console.error("Errore ricerca ricette:", error);
                 return null;
@@ -2661,12 +2665,12 @@ async function searchFoodsAndRecipes(searchTerm) {
 
         // Ricerca client-side nella cache per corrispondenze parziali non coperte dalle query Firestore
         [...foods, ...recipes].forEach(item => {
-            if (!results.has(item.id) && matchesSearch(item, lowerCaseSearchTerm)) {
+            if (!results.has(item.id) && matchesSearch(item, term)) {
                 results.set(item.id, { ...item, isRecipe: !!item.ingredients });
             }
         });
 
-        return sortResults(Array.from(results.values()), lowerCaseSearchTerm).slice(0, 20);
+        return rankResults(results, term);
     } catch (error) {
         console.error("Errore nella ricerca unificata:", error);
         showToast("Errore durante la ricerca.", true);

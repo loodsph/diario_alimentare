@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mealNutrition, computeRecipeNutrition, findMissingIngredients, groupNutrientDetails } from '../public/modules/nutrition.js';
-import { searchTokens, sortResults, matchesSearch } from '../public/modules/foodSearch.js';
+import { searchTokens, normalizeQuery, queryToken, sortResults, matchesSearch, buildUsageStats, usageBoost } from '../public/modules/foodSearch.js';
 
 test('meal nutrition scales per-100g values and falls back to CREA field names', () => {
     assert.deepEqual(mealNutrition({ quantity: 150, calories: 200, proteins: 10, carbs: 20, fats: 4, fibers: 2 }),
@@ -39,4 +39,40 @@ test('search tokens, matching and ranking', () => {
     assert.deepEqual(sortResults([...items], 'pane').map(item => item.name), ['Pane', 'Pane integrale', 'Panettone', 'Grissini al pane']);
     assert.ok(matchesSearch(items[1], 'issini'));
     assert.ok(!matchesSearch(items[3], 'riso'));
+});
+
+test('multi-word search requires every word and picks a complete word for Firestore', () => {
+    assert.equal(normalizeQuery('  Pasta   Integrale '), 'pasta integrale');
+    assert.equal(queryToken('pasta'), 'pasta');
+    assert.equal(queryToken('pasta di semola integr'), 'semola'); // l'ultima parola è incompleta
+    const items = [
+        { name: 'Pasta di semola integrale', search_tokens: ['pasta', 'di', 'semola', 'integrale'] },
+        { name: 'Pasta di semola', search_tokens: ['pasta', 'di', 'semola'] },
+        { name: 'Petto di pollo', search_tokens: ['petto', 'di', 'pollo'] },
+        { name: 'Pollo intero', search_tokens: ['pollo', 'intero'] }
+    ];
+    assert.deepEqual(items.filter(item => matchesSearch(item, 'pasta integr')).map(item => item.name), ['Pasta di semola integrale']);
+    assert.deepEqual(items.filter(item => matchesSearch(item, 'pollo petto')).map(item => item.name), ['Petto di pollo']);
+    assert.ok(!matchesSearch(items[0], '   '));
+});
+
+test('frequently and recently used foods rank first among relevant results', () => {
+    const now = new Date('2026-10-24T12:00:00Z').getTime();
+    const daysAgo = days => new Date(now - days * 24 * 60 * 60 * 1000);
+    const meals = [
+        { name: 'Latte parzialmente scremato', foodId: 'latte-ps', jsDate: daysAgo(1) },
+        { name: 'Latte parzialmente scremato', foodId: 'latte-ps', jsDate: daysAgo(2) },
+        { name: 'Yogurt al latte intero', jsDate: daysAgo(40) } // pasto vecchio senza foodId
+    ];
+    const usage = buildUsageStats(meals);
+    const items = [
+        { id: 'latte', name: 'Latte' },
+        { id: 'latte-ps', name: 'Latte parzialmente scremato' },
+        { id: 'yogurt', name: 'Yogurt al latte intero' },
+        { id: 'pane', name: 'Pane' }
+    ];
+    assert.equal(usageBoost(items[3], usage, now), 0);
+    assert.equal(usageBoost(items[2], usage, now), 2); // trovato per nome, troppo vecchio per la recenza
+    assert.deepEqual(sortResults([...items], 'latte', usage, now).map(item => item.name),
+        ['Latte parzialmente scremato', 'Latte', 'Yogurt al latte intero', 'Pane']);
 });
