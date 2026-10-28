@@ -70,3 +70,13 @@ test('manual entry only advances after valid data; recipes open from the library
     assert.ok(visible('entry-portion'));
     assert.equal(element('entry-date').textContent, '21 ottobre 2026');
 });
+
+test('save and add another keeps the editor open at search without returning to the diary', () => {
+    const { flow, visible } = fixture();
+    flow.select({ name: 'Pane' });
+    flow.reset(true);
+    assert.ok(visible('add-meal-card'));
+    assert.ok(visible('entry-food'));
+    assert.ok(!visible('entry-portion'));
+    assert.ok(!visible('view-diary'));
+});

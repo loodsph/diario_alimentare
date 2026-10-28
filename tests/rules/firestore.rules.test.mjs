@@ -1,8 +1,9 @@
 // Test delle regole Firestore. Richiedono l'emulatore: `npm run test:rules`.
 import test, { before, after, beforeEach } from 'node:test';
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, setLogLevel } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, setLogLevel, disableNetwork, enableNetwork, onSnapshot, query, where, Timestamp, getDocs, writeBatch } from 'firebase/firestore';
 
 // I rifiuti attesi (assertFails) altrimenti riempiono il log di PERMISSION_DENIED.
 setLogLevel('silent');
@@ -76,4 +77,44 @@ test('gli alimenti non si cancellano dal client', async () => {
 test('le collezioni non previste sono chiuse', async () => {
     await assertFails(setDoc(doc(as('bob'), 'altro/x'), { a: 1 }));
     await assertFails(getDoc(doc(as('bob'), 'users/alice')));
+});
+
+
+test('pasti, acqua e ripristino si accodano offline e si sincronizzano senza duplicati', { timeout: 15000 }, async () => {
+    const db = as('alice');
+    const ref = doc(db, 'users/alice/meals/offline');
+    await getDoc(ref);
+    await disableNetwork(db);
+    const payload = { name: 'Pane', quantity: 90, portion: { unitId: 'custom', amount: 3, gramsPerUnit: 30 }, date: Timestamp.fromDate(new Date('2025-01-02T12:00:00Z')) };
+    let unsubscribe;
+    const local = new Promise(resolve => {
+        unsubscribe = onSnapshot(ref, { includeMetadataChanges: true }, snapshot => {
+            if (snapshot.metadata.hasPendingWrites && snapshot.exists()) resolve(snapshot.data());
+        });
+    });
+    const added = setDoc(ref, payload);
+    try {
+        assert.equal((await local).quantity, 90);
+        const removed = deleteDoc(ref);
+        const restored = setDoc(ref, payload);
+        const water = setDoc(doc(db, 'users/alice/water/2025-01-02'), { count: 2 });
+        await enableNetwork(db);
+        await Promise.all([added, removed, restored, water]);
+        const saved = await getDoc(ref);
+        assert.equal(saved.metadata.hasPendingWrites, false);
+        assert.equal(saved.data().portion.amount, 3);
+        const historical = await getDocs(query(collection(db, 'users/alice/meals'), where('date', '>=', Timestamp.fromDate(new Date('2025-01-01'))), where('date', '<=', Timestamp.fromDate(new Date('2025-01-03')))));
+        assert.deepEqual(historical.docs.map(item => item.id), ['offline']);
+    } finally { unsubscribe?.(); await enableNetwork(db); }
+});
+
+test('un pasto abituale è privato e la sua copia in batch mantiene le porzioni', async () => {
+    const db = as('alice');
+    const items = [{ name: 'Pane', quantity: 60, portion: { unitId: 'custom', amount: 2, gramsPerUnit: 30 } }, { name: 'Yogurt', quantity: 125 }];
+    await assertSucceeds(setDoc(doc(db, 'users/alice/habitualMeals/breakfast'), { name: 'Colazione', items }));
+    await assertFails(getDoc(doc(as('bob'), 'users/alice/habitualMeals/breakfast')));
+    const batch = writeBatch(db);
+    items.forEach((item, index) => batch.set(doc(db, `users/alice/meals/copy-${index}`), item));
+    await assertSucceeds(batch.commit());
+    assert.equal((await getDoc(doc(db, 'users/alice/meals/copy-0'))).data().portion.amount, 2);
 });

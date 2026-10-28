@@ -1,4 +1,5 @@
 // Barcode scanner module
+import { loadScript } from './lazy.js';
 import { showToast } from './uiHelpers.js';
 
 // Stato dello scanner, usato solo da questo modulo.
@@ -26,10 +27,13 @@ export async function startScanner(onDecode) {
     feedbackEl.textContent = 'Avvio fotocamera...';
 
     try {
+        await loadScript('https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js');
+        if (scannerModal.classList.contains('hidden')) return;
         // Ottieni la lista delle fotocamere solo se non è già stata caricata.
         // Questo preserva la selezione dell'utente nelle aperture successive.
         if (availableCameras.length === 0) {
             const cameras = await window.Html5Qrcode.getCameras();
+            if (scannerModal.classList.contains('hidden')) return;
             if (!cameras || cameras.length === 0) {
                 throw new Error("Nessuna fotocamera trovata.");
             }

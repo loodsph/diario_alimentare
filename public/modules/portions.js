@@ -30,7 +30,7 @@ export function portionOptions(food = {}, customUnit = null) {
         options.push({ id: 'serving', label: 'Porzioni della ricetta', grams: recipeWeight(food) / food.servings, source });
         options.push({ id: 'recipe', label: 'Ricetta intera', grams: recipeWeight(food), source });
     } else if (positive(food.servingGrams)) {
-        options.push({ id: 'serving', label: food.servingLabel || 'Porzioni del prodotto', grams: Number(food.servingGrams), source: 'Dati del prodotto' });
+        options.push({ id: 'serving', label: food.servingLabel || 'Porzioni del prodotto', grams: Number(food.servingGrams), source: food.estimate ? 'Stima in pezzi' : 'Dati del prodotto' });
     }
     if (positive(food.packageGrams)) {
         options.push({ id: 'package', label: 'Confezioni', grams: Number(food.packageGrams), source: 'Peso netto del prodotto' });

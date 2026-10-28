@@ -7,7 +7,7 @@
     "build:css": "tailwindcss -i ./public/input.css -o ./public/style.css --watch",
     "test": "node --test tests/*.test.mjs",
     "build": "tailwindcss -i ./public/input.css -o ./public/style.css",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-nutritrack 'node --test tests/rules/*.test.mjs'"
+    "test:rules": "firebase emulators:exec --only firestore --project demo-nutritrack 'node --test --test-force-exit tests/rules/*.test.mjs'"
   },
   "repository": {
     "type": "git",

@@ -1,4 +1,5 @@
-import { portionOptions, quantityInGrams, positive, formatAmount } from './portions.js';
+import { estimateLabel } from './mealEstimate.js?v=20261028';
+import { portionOptions, quantityInGrams, positive, formatAmount } from './portions.js?v=20261025';
 
 export function createPortionPicker(root, onChange) {
     const get = id => root.getElementById(id);
@@ -23,7 +24,7 @@ export function createPortionPicker(root, onChange) {
             ? ' Il peso cotto non è registrato: usa le porzioni o una frazione della ricetta.' : '';
         hint.textContent = `${origin ? `${origin}. ` : ''}${unit.id === 'g'
             ? (positive(quantity) ? `${formatAmount(quantity)} g` : 'Inserisci il peso oppure definisci una tua misura.')
-            : `1 unità = ${formatAmount(unit.grams)} g · ${unit.source}${positive(quantity) ? ` · Totale ${formatAmount(quantity)} g` : ''}`}${recipeWarning}${food.estimated ? ' Stima da foto, da verificare.' : ''}`;
+            : `1 unità = ${formatAmount(unit.grams)} g · ${unit.source}${positive(quantity) ? ` · Totale ${formatAmount(quantity)} g` : ''}`}${recipeWarning}${food.estimated ? ` ${estimateLabel(food)}, da verificare.` : ''}`;
         shortcuts.replaceChildren();
         if (unit.id !== 'g') {
             const values = unit.id === 'recipe' || unit.id === 'package' ? [0.25, 0.5, 0.75, 1] : [0.5, 1, 1.5, 2];
@@ -117,7 +118,7 @@ export function createPortionPicker(root, onChange) {
             } else if (positive(saved?.quantity)) {
                 select.value = 'g';
                 amount.value = saved.quantity;
-                origin = foodData.estimated && !saved?.portion ? 'Quantità proposta dalla foto' : 'Quantità salvata';
+                origin = foodData.estimated && !saved?.portion ? 'Quantità stimata da verificare' : 'Quantità salvata';
             } else if (food.isRecipe || positive(food.servingGrams) || positive(food.packageGrams)) {
                 select.value = options.some(unit => unit.id === 'serving') ? 'serving' : 'package';
                 amount.value = 1;

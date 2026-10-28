@@ -1,5 +1,5 @@
 /** Page navigation and the food → portion flow; data and persistence stay in script.js. */
-export function createMealEntry(root, { onCustomContinue = () => false } = {}) {
+export function createMealEntry(root, { onViewChange = () => {}, onCustomContinue = () => false } = {}) {
     const get = id => root.getElementById(id);
     let view = 'diary';
     let step = 'food';
@@ -39,7 +39,7 @@ export function createMealEntry(root, { onCustomContinue = () => false } = {}) {
         get('selected-food-name').textContent = food.name;
         step = 'portion'; editing = true; paint(); focusStep();
     }
-    function reset() { step = 'food'; close(); }
+    function reset(keepOpen = false) { step = 'food'; if (keepOpen) open(); else close(); }
     get('open-meal-entry').addEventListener('click', open);
     get('close-meal-entry').addEventListener('click', close);
     get('change-meal-food').addEventListener('click', () => { step = 'food'; paint(); focusStep(); });
@@ -48,9 +48,9 @@ export function createMealEntry(root, { onCustomContinue = () => false } = {}) {
         if (food) select(food);
     });
     root.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
-        view = button.dataset.view; editing = false; paint();
+        view = button.dataset.view; editing = false; paint(); onViewChange(view);
     }));
     root.querySelector('.wordmark').addEventListener('click', event => { event.preventDefault(); close(); });
     paint();
-    return { open, close, select, reset };
+    return { open, close, select, reset, currentView: () => editing ? 'entry' : view };
 }

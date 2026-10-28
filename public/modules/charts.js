@@ -1,3 +1,4 @@
+import { calorieSeries } from './diary.js';
 import { getDayBounds, getTodayUTC } from './utils.js';
 
 let calorieChart = null;
@@ -98,19 +99,10 @@ export function updateCharts(dailyTotalsCache, selectedDate) {
     if (!calorieChart || !macroChart) return;
 
     // Grafico calorie (ultimi 7 giorni)
-    const calorieLabels7Days = [];
-    const calorieData7Days = [];
-    for (let i = 6; i >= 0; i--) {
-        const date = getTodayUTC(); // Inizia da oggi (UTC)
-        date.setUTCDate(date.getUTCDate() - i);
-        const dateKey = date.toISOString().split('T')[0];
-        const dayTotals = dailyTotalsCache[dateKey];
-        const dayCalories = (dayTotals && !isNaN(dayTotals.calories)) ? dayTotals.calories : 0;
-        calorieLabels7Days.push(date.toLocaleDateString('it-IT', { timeZone: 'UTC', day: 'numeric', month: 'short' }));
-        calorieData7Days.push(dayCalories.toFixed(0));
-    }
-    calorieChart.data.labels = calorieLabels7Days;
-    calorieChart.data.datasets[0].data = calorieData7Days;
+    const series = calorieSeries(dailyTotalsCache, selectedDate);
+    calorieChart.data.labels = series.map(point => point.date.toLocaleDateString('it-IT', { timeZone: 'UTC', day: 'numeric', month: 'short' }));
+    calorieChart.data.datasets[0].data = series.map(point => point.value);
+    calorieChart.data.datasets[0].spanGaps = false;
 
     // Grafico macro (giorno selezionato)
     const selectedDateKey = selectedDate.toISOString().split('T')[0];

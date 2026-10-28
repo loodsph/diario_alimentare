@@ -20,12 +20,12 @@
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
-<link href="style.css" rel="stylesheet"/>
+<link href="style.css?v=20261028" rel="stylesheet"/>
 </head>
 <body class="nutritrack">
 <div aria-live="assertive" class="offline-indicator" id="offline-indicator" role="alert">
 <i class="fas fa-wifi-slash mr-2"></i>
-        Sei offline. Alcune funzionalità potrebbero non essere disponibili.
+        Sei offline. I pasti e l’acqua vengono salvati sul dispositivo e sincronizzati al ritorno della rete.
     </div>
 <div class="fixed inset-0 bg-slate-900 bg-opacity-90 flex items-center justify-center z-50" id="loading-overlay">
 <div class="text-center">
@@ -56,7 +56,7 @@
 <button aria-label="Esci" class="icon-button" id="logout-btn">
 <i aria-hidden="true" class="fas fa-sign-out-alt"></i>
 </button>
-</div><nav aria-label="Navigazione principale" class="app-nav"><button aria-current="page" data-view="diary" type="button">Diario</button><button data-view="insights" type="button">Andamento</button><button data-view="library" type="button">La tua raccolta</button></nav>
+</div><div class="sync-strip" role="status" aria-live="polite"><span id="sync-status">Caricamento dati…</span><button id="retry-sync" class="text-button hidden">Riprova salvataggi</button></div><nav aria-label="Navigazione principale" class="app-nav"><button aria-current="page" data-view="diary" type="button">Diario</button><button data-view="insights" type="button">Andamento</button><button data-view="library" type="button">La tua raccolta</button></nav>
 <div class="diary-intro" id="diary-intro"><div><p class="eyebrow">IL TUO DIARIO</p><h1>Un pasto alla volta.</h1><p class="muted">Quello che mangi, con semplicità.</p></div><button class="btn-modern btn-primary" id="open-meal-entry"><span aria-hidden="true">＋</span> Aggiungi qualcosa</button></div><div class="date-navigation" id="date-navigation"><div class="date-controls"><button aria-label="Giorno precedente" class="icon-button" id="prev-day">
 <i class="fas fa-chevron-left"></i>
 </button><input aria-label="Data del diario" class="date-input" id="date-picker" type="date"/><button aria-label="Giorno successivo" class="icon-button" id="next-day">
@@ -90,7 +90,7 @@
 </div>
 </div><div class="diary-columns"><div class="diary-meals" id="day-meals-container">
 <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">I pasti della giornata</h2>
-<div aria-label="Pasti del giorno" class="meal-sections" id="selected-day-meals" role="region">
+<p id="history-status" class="muted" role="status"></p><button id="retry-history" class="text-button hidden">Riprova caricamento</button><div aria-label="Pasti del giorno" class="meal-sections" id="selected-day-meals" role="region">
 </div>
 </div><div class="water-card">
 <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">Un sorso alla volta</h3>
@@ -215,8 +215,7 @@
 
                     Andamento Calorico
                 </h3>
-<div class="h-80">
-<canvas aria-label="Grafico andamento calorico" id="calorie-chart" role="img"></canvas>
+<p id="chart-period" class="muted"></p><p id="chart-status" class="muted" role="status"></p><button id="retry-charts" class="text-button hidden">Riprova grafici</button><div class="h-80"><canvas aria-label="Grafico andamento calorico" id="calorie-chart" role="img"></canvas>
 </div>
 </div>
 <div class="chart-container">
@@ -228,7 +227,7 @@
 <canvas aria-label="Grafico distribuzione macronutrienti" id="macro-chart" role="img"></canvas>
 </div>
 </div>
-</div></main><main class="app-view hidden" id="view-library"><div class="page-intro"><p class="eyebrow">A PORTATA DI MANO</p><h1>La tua raccolta.</h1><p class="muted">Ricette, alimenti e storico delle tue giornate.</p></div><div class="space-y-8">
+</div></main><main class="app-view hidden" id="view-library"><div class="page-intro"><p class="eyebrow">A PORTATA DI MANO</p><h1>La tua raccolta.</h1><p class="muted">Ricette, alimenti e storico delle tue giornate.</p></div><section class="glass-card mb-6"><h2>Pasti abituali</h2><p class="muted">Salva una combinazione dal diario per riutilizzarla.</p><div id="habitual-meals"></div></section><div class="space-y-8">
 <div class="collapsible-section collapsed">
 <button aria-controls="recipes-content" aria-expanded="false" class="section-header">
 <h2 class="text-2xl font-bold flex items-center gap-3">
@@ -306,7 +305,7 @@
 <button aria-controls="history-content" aria-expanded="false" class="section-header">
 <h2 class="text-2xl font-bold flex items-center gap-3">
 
-                        Storico Ultimi 7 Giorni
+                        Storico della settimana selezionata
                     </h2>
 <i class="fas fa-chevron-down toggle-icon"></i>
 </button>
@@ -439,6 +438,8 @@
 </div>
 <button aria-label="Analizza foto con AI" class="btn-modern btn-secondary photo-entry" id="ai-photo-btn" type="button">
 <i class="fas fa-camera"></i> Stima da una foto</button>
+<button class="btn-modern btn-secondary estimate-entry" id="describe-dish-btn" type="button">Descrivi un piatto <span>Ingredienti e cottura → stima per 100 g</span></button>
+<button class="btn-modern btn-secondary estimate-entry" id="estimate-meal-btn" type="button">Grigliata o sushi? <span>Stima il pasto in pezzi →</span></button>
 </div>
 <div class="meal-form-section space-y-4 hidden" id="custom-meal-container">
 <input aria-label="Nome pasto personalizzato" class="input-modern w-full" id="custom-meal-name" placeholder="Nome pasto personalizzato" type="text"/>
@@ -499,10 +500,10 @@
                             </button>
 </div>
 <div class="preview-values"><div><span class="font-bold text-right" id="preview-calories">0</span><span>Calorie</span></div><div><span class="font-bold text-right" id="preview-proteins">0 g</span><span>Proteine</span></div><div><span class="font-bold text-right" id="preview-carbs">0 g</span><span>Carboidrati</span></div><div><span class="font-bold text-right" id="preview-fats">0 g</span><span>Grassi</span></div><div><span class="font-bold text-right" id="preview-fibers">0 g</span><span>Fibre</span></div></div>
-</div><button class="btn-modern btn-primary w-full !py-4 text-lg" id="add-meal-btn">
+<p id="estimate-preview-detail" class="muted estimate-preview-detail"></p><button type="button" id="edit-estimate-btn" class="text-button hidden">Modifica pezzi e ingredienti</button></div><button class="btn-modern btn-primary w-full !py-4 text-lg" id="add-meal-btn">
 <i class="fas fa-plus-circle mr-3"></i>
                         Aggiungi al Diario
-                    </button><details class="mt-4" id="portion-help">
+                    </button><button class="btn-modern btn-secondary w-full mt-3" id="add-another-meal-btn" type="button">Salva e aggiungi altro</button><details class="mt-4" id="portion-help">
 <summary class="text-sm text-indigo-300 cursor-pointer">Usa fette, pezzi o vasetti</summary>
 <p class="text-sm text-slate-300 mt-3">Hai una confezione? Usa il peso netto in etichetta e la frazione che hai mangiato. Per una ricetta, scegli le porzioni o una parte della preparazione.</p>
 <p class="text-sm text-slate-400 mt-2">Per fette, pezzi, cucchiai o bicchieri, definisci una misura per questo alimento: ricava il peso dall’etichetta o pesala una volta. I ml non vengono convertiti automaticamente in grammi. Per un piatto senza riferimenti puoi usare la foto AI e verificare la stima.</p>
@@ -724,10 +725,10 @@
 <input class="input-modern w-full" id="edit-meal-name-input" type="text"/>
 </div>
 <div id="edit-standard-meal-fields">
-<label class="block text-sm font-semibold text-slate-300 mb-3" for="edit-meal-quantity">Quantità (g)</label>
-<input class="input-modern w-full" id="edit-meal-quantity" placeholder="100" type="number"/>
+<label class="input-label" for="edit-meal-unit">Misura</label><select id="edit-meal-unit" class="input-modern w-full"></select><label class="input-label mt-3" for="edit-meal-quantity">Quantità</label>
+<input class="input-modern w-full" id="edit-meal-quantity" min="0.01" step="any" inputmode="decimal" type="number"/>
 </div>
-<div class="hidden space-y-4" id="edit-custom-meal-fields">
+<p id="edit-portion-hint" class="muted"></p><button type="button" id="edit-saved-estimate-btn" class="text-button hidden">Modifica pezzi e ingredienti</button><div class="hidden space-y-4" id="edit-custom-meal-fields">
 <div class="grid grid-cols-2 gap-4">
 <input aria-label="Calorie per 100 grammi" class="input-modern w-full" id="edit-meal-calories" placeholder="Calorie per 100 g" type="number"/>
 <input aria-label="Proteine per 100 grammi" class="input-modern w-full" id="edit-meal-proteins" placeholder="Proteine per 100 g" type="number"/>
@@ -788,10 +789,16 @@
 </div>
 </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
-<script defer="" src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script defer="" src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
-<script src="script.js" type="module"></script>
+<div id="undo-notices" class="undo-notices" aria-live="polite"></div>
+<div id="meal-group-modal" class="modal fixed inset-0 items-center justify-center z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="meal-group-title">
+<div class="modal-content p-6 max-w-lg w-full mx-4">
+<h2 id="meal-group-title" class="text-xl mb-3"></h2><p id="meal-group-context" class="muted mb-3"></p>
+<div id="meal-group-name-field"><label class="input-label" for="meal-group-name">Nome del pasto abituale</label><input id="meal-group-name" class="input-modern w-full" maxlength="100" placeholder="La mia colazione"/></div>
+<label class="input-label mt-3" for="meal-group-type">Tipo di pasto</label><select id="meal-group-type" class="input-modern w-full"><option>🌅 Colazione</option><option>🍽️ Pranzo</option><option>🌙 Cena</option><option>🍪 Spuntino</option></select>
+<div id="meal-group-items" class="mt-4"></div><p id="meal-group-error" role="alert"></p>
+<div class="flex gap-3 mt-4"><button id="cancel-meal-group" class="btn-modern btn-secondary">Annulla</button><button id="save-meal-group" class="btn-modern btn-primary">Aggiungi al diario</button></div>
+</div></div>
+<script src="script.js?v=20261028" type="module"></script>
 <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(err => console.error('Service worker non registrato:', err)));

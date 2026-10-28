@@ -4,7 +4,7 @@
 // - Librerie da CDN (URL con versione fissa): cache-first.
 // - Firestore, Auth, Gemini, Open Food Facts: non intercettati.
 
-const CACHE = 'nutritrack-v2';
+const CACHE = 'nutritrack-v5';
 
 const APP_SHELL = [
     '/',
@@ -16,6 +16,8 @@ const APP_SHELL = [
     '/icons/icon-192.png',
     '/icons/favicon-32.png',
     '/modules/aiPhotoAnalysis.js',
+    '/modules/aiDishAnalysis.js',
+    '/modules/dishEstimateEditor.js',
     '/modules/charts.js',
     '/modules/foodSearch.js',
     '/modules/mealEntry.js',
@@ -24,7 +26,13 @@ const APP_SHELL = [
     '/modules/portions.js',
     '/modules/scanner.js',
     '/modules/uiHelpers.js',
-    '/modules/utils.js'
+    '/modules/utils.js',
+    '/modules/diary.js',
+    '/modules/sync.js',
+    '/modules/lazy.js',
+    '/modules/photo.js',
+    '/modules/mealEstimate.js',
+    '/modules/estimateEditor.js'
 ];
 
 const CDN_HOSTS = [
@@ -37,7 +45,7 @@ const CDN_HOSTS = [
 ];
 
 self.addEventListener('install', event => {
-    event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+    event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_SHELL.map(path => new Request(path, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {
@@ -51,7 +59,7 @@ self.addEventListener('activate', event => {
 async function networkFirst(request) {
     const cache = await caches.open(CACHE);
     try {
-        const response = await fetch(request);
+        const response = await fetch(request, { cache: 'no-cache' });
         if (response.ok) cache.put(request, response.clone());
         return response;
     } catch (error) {

@@ -1,16 +1,23 @@
 // Importa le funzioni necessarie da Firebase SDK
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch, updateDoc, waitForPendingWrites } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { dayKey, weekDates, editPortion, mealTemplate } from './modules/diary.js?v=20261028';
+import { createWriteTracker } from './modules/sync.js';
+import { loadScript } from './modules/lazy.js';
+import { preparePhoto } from './modules/photo.js';
 import { debounce, getDayBounds, formatDate, getMealTimestamp, getTodayUTC } from './modules/utils.js';
 import { showToast, triggerFlashAnimation } from './modules/uiHelpers.js';
 import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
 import { firebaseConfig } from './firebase-config.js';
 import { startScanner, stopScanner, handleCameraChange, toggleFlash, handleFileSelect } from './modules/scanner.js';
 import { getGeminiApiKey, saveGeminiApiKey, analyzePhoto, refineWithAnswer, parseResponse } from './modules/aiPhotoAnalysis.js';
+import { estimateLabel, estimateRange, estimateBreakdown } from './modules/mealEstimate.js?v=20261028';
+import { createEstimateEditor } from './modules/estimateEditor.js';
+import { createDishEstimateEditor } from './modules/dishEstimateEditor.js';
 import { createMealEntry } from './modules/mealEntry.js';
-import { createPortionPicker } from './modules/portionPicker.js';
-import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js';
+import { createPortionPicker } from './modules/portionPicker.js?v=20261028';
+import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js?v=20261025';
 import { emptyTotals, addTotals, mealNutrition, computeRecipeNutrition, findMissingIngredients, groupNutrientDetails, MAX_RECIPE_INGREDIENTS } from './modules/nutrition.js';
 import { searchTokens, normalizeQuery, queryToken, sortResults, matchesSearch, buildUsageStats } from './modules/foodSearch.js';
 
@@ -35,6 +42,57 @@ let dailyTotalsCache = {};      // Totali nutrizionali per data
 let foods = [];                  // Cache on-demand degli alimenti (popolata dalle ricerche)
 let recipes = [];
 let favoriteMeals = [];
+let habitualMeals = [];
+let habitualUnsubscribe = null;
+let dayLoadStates = {};
+let snapshotPending = false;
+let waterPending = false;
+let habitsPending = false;
+let restoredWritesPending = false;
+let syncCounts = { pending: 0, failed: 0 };
+let chartsReady = false;
+let chartsLoading = null;
+let mealListenerGeneration = 0;
+let groupDraft = null;
+let photoGeneration = 0;
+const writeTracker = createWriteTracker(counts => { syncCounts = counts; renderSyncStatus(); }, message => showToast(message, true));
+
+function renderSyncStatus() {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    el.textContent = syncCounts.failed ? `${syncCounts.failed} salvataggi non riusciti`
+        : syncCounts.pending || snapshotPending || waterPending || habitsPending || restoredWritesPending ? (isOnline ? 'Sincronizzazione in corso…' : 'Salvato sul dispositivo · da sincronizzare')
+        : isOnline ? 'Sincronizzato' : 'Offline · dati sul dispositivo';
+    document.getElementById('retry-sync')?.classList.toggle('hidden', !syncCounts.failed);
+}
+function queueWrite(operation, label, onSynced, key) {
+    return writeTracker.submit(operation, { label, onSynced, key });
+}
+async function showInsights() {
+    if (mealEntry?.currentView() !== 'insights') return;
+    const session = userId;
+    if (!chartsReady) {
+        document.getElementById('chart-status').textContent = 'Caricamento grafici…';
+        try {
+            chartsLoading ||= loadScript('https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js');
+            await chartsLoading;
+            if (userId !== session || mealEntry?.currentView() !== 'insights') return;
+            if (!chartsReady) initCharts(document.getElementById('calorie-chart').getContext('2d'), document.getElementById('macro-chart').getContext('2d'));
+            chartsReady = true;
+            document.getElementById('chart-status').textContent = 'Le interruzioni indicano giorni senza registrazioni.';
+            document.getElementById('retry-charts').classList.add('hidden');
+        } catch (error) {
+            chartsLoading = null;
+            document.getElementById('chart-status').textContent = error.message;
+            document.getElementById('retry-charts').classList.remove('hidden');
+            return;
+        }
+    }
+    const days = weekDates(selectedDate);
+    document.getElementById('chart-period').textContent = `${formatDate(days[0])} – ${formatDate(selectedDate)}`;
+    updateCharts(dailyTotalsCache, selectedDate);
+}
+
 
 // Obiettivi nutrizionali
 let nutritionGoals = {
@@ -55,6 +113,9 @@ let selectedFood = null;
 let portionPicker = null;
 let isCustomMealMode = false;
 let mealToEditId = null;
+let editedMealEstimate = null;
+let estimateEditor = null;
+let dishEstimateEditor = null;
 let foodToEditId = null;
 let recipeToEditId = null;
 let onConfirmAction = null;
@@ -152,11 +213,11 @@ window.addEventListener('DOMContentLoaded', () => {
                 // Carica tutti i dati iniziali in parallelo e attendi il completamento
                 // per evitare race conditions e rendering con dati parziali.
                 await loadInitialData();
-
-                initCharts(
-                    document.getElementById('calorie-chart').getContext('2d'),
-                    document.getElementById('macro-chart').getContext('2d')
-                );
+                if (userId !== user.uid) return;
+                restoredWritesPending = true;
+                waitForPendingWrites(db).then(() => {
+                    if (userId === user.uid) { restoredWritesPending = false; renderSyncStatus(); }
+                }).catch(() => {});
 
                 // Ora che tutti i dati sono caricati e processati, aggiorna l'intera UI.
                 updateAllUI();
@@ -176,6 +237,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 listenToRecipes();
                 listenToFavoriteMeals();
                 listenToWaterHistory();
+                listenToHabitualMeals();
+                updateOnlineStatus(navigator.onLine);
 
                 appContainer.classList.remove('hidden');
             } catch (error) {
@@ -206,7 +269,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
 let mealEntry = null;
 function setupListeners() {
-    mealEntry = createMealEntry(document, { onCustomContinue: () => {
+    window.addEventListener('online', () => updateOnlineStatus(true));
+    window.addEventListener('offline', () => updateOnlineStatus(false));
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && groupDraft) closeMealGroup();
+        if (event.key !== 'Tab' || !groupDraft) return;
+        const controls = [...document.getElementById('meal-group-modal').querySelectorAll('button, input, select')].filter(el => el.getClientRects().length && !el.disabled);
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    });
+    mealEntry = createMealEntry(document, { onViewChange: view => { if (view === 'insights') showInsights(); if (view === 'library') renderWeeklyHistory(); }, onCustomContinue: () => {
         const name = document.getElementById('custom-meal-name').value.trim();
         const valid = ['calories', 'proteins', 'carbs', 'fats'].every(key => {
             const value = document.getElementById(`custom-meal-${key}`).value;
@@ -218,6 +291,12 @@ function setupListeners() {
         return { name };
     } });
     portionPicker = createPortionPicker(document, updateMealPreview);
+    estimateEditor = createEstimateEditor(document, food => selectMealFood(food, food));
+    dishEstimateEditor = createDishEstimateEditor(document, food => selectMealFood(food));
+    document.getElementById('describe-dish-btn').addEventListener('click', () => dishEstimateEditor.open());
+    document.getElementById('estimate-meal-btn').addEventListener('click', () => estimateEditor.open());
+    document.getElementById('edit-estimate-btn').addEventListener('click', () => estimateEditor.open(selectedFood, portionPicker.quantity()));
+    document.getElementById('edit-saved-estimate-btn').addEventListener('click', editSavedEstimate);
     // Dichiaro le variabili per gli input qui per evitare errori di riferimento
     const foodSearchInput = document.getElementById('food-search');
 
@@ -241,7 +320,17 @@ function setupListeners() {
     document.getElementById('add-ingredient-btn').addEventListener('click', addIngredientRow);
     document.getElementById('save-recipe-btn').addEventListener('click', saveRecipe);
     document.getElementById('add-food-btn').addEventListener('click', addNewFood);
-    document.getElementById('add-meal-btn').addEventListener('click', addMeal);
+    document.getElementById('add-meal-btn').addEventListener('click', () => addMeal(false));
+    document.getElementById('add-another-meal-btn').addEventListener('click', () => addMeal(true));
+    document.getElementById('retry-sync').addEventListener('click', () => writeTracker.retry());
+    document.getElementById('retry-history').addEventListener('click', listenToMeals);
+    document.getElementById('retry-charts').addEventListener('click', showInsights);
+    document.getElementById('cancel-meal-group').addEventListener('click', closeMealGroup);
+    document.getElementById('save-meal-group').addEventListener('click', saveMealGroup);
+    document.getElementById('edit-meal-unit').addEventListener('change', changeEditUnit);
+    document.getElementById('edit-meal-quantity').addEventListener('input', updateEditPortionHint);
+    document.getElementById('selected-day-meals').addEventListener('click', handleGroupAction);
+    document.getElementById('habitual-meals').addEventListener('click', handleHabitualAction);
 
     // Pasti preferiti toggle e azioni
     document.getElementById('favorite-meals-toggle').addEventListener('click', toggleFavoriteMeals);
@@ -542,6 +631,7 @@ function logout() {
 function updateOnlineStatus(online) {
     isOnline = online;
     document.getElementById('offline-indicator').classList.toggle('show', !online);
+    renderSyncStatus();
     if (online) {
         showToast('Sei di nuovo online!', false);
         // Quando torno online, nascondo i pulsanti dei pasti che potrebbero essere rimasti attivi
@@ -550,7 +640,7 @@ function updateOnlineStatus(online) {
             document.querySelectorAll('.meal-item.is-active').forEach(item => item.classList.remove('is-active'));
         }, 1000);
     } else {
-        showToast('Sei offline. Alcune funzionalità potrebbero non essere disponibili.', true);
+        showToast('Offline: puoi continuare a registrare pasti e acqua.');
     }
 }
 
@@ -590,6 +680,7 @@ function toggleCustomMealForm() {
 
 async function loadInitialData() {
     if (!userId) return;
+    const owner = userId;
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -603,6 +694,7 @@ async function loadInitialData() {
         loadNutritionGoals()
     ]);
 
+    if (owner !== userId) return;
     if (mealsResult.status === 'fulfilled') {
         allMeals = mealsResult.value.docs.map(doc => ({ id: doc.id, ...doc.data(), jsDate: doc.data().date.toDate() }));
     } else {
@@ -624,47 +716,66 @@ async function loadInitialData() {
     processInitialMeals();
 }
 
+function mealContent(meal) {
+    if (!meal) return '';
+    const { pending, ...data } = meal;
+    return JSON.stringify(data);
+}
 function listenToMeals() {
-    if (mealsUnsubscribe) mealsUnsubscribe(); // Chiude il listener precedente per evitare memory leak
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const mealsQuery = query(collection(db, `users/${userId}/meals`), where('date', '>=', Timestamp.fromDate(thirtyDaysAgo)));
-
-    mealsUnsubscribe = onSnapshot(mealsQuery, (snapshot) => {
-        // Aggiorna l'UI solo se l'app è già stata inizializzata.
-        // Questo previene race conditions durante il caricamento iniziale,
-        // ignorando il primo snapshot che contiene dati già caricati.
-        if (isAppInitialized) {
-            let needsUiUpdate = false;
-            snapshot.docChanges().forEach((change) => {
-                needsUiUpdate = true;
-                const mealId = change.doc.id;
-                const data = { ...change.doc.data(), jsDate: change.doc.data().date.toDate() };
-
-                if (change.type === "added") {
-                    // Aggiunge solo se non è già presente per evitare duplicati
-                    if (!allMeals.some(m => m.id === mealId)) {
-                        allMeals.push({ id: mealId, ...data });
-                    }
-                } else if (change.type === "modified") {
-                    const index = allMeals.findIndex(m => m.id === mealId);
-                    if (index > -1) allMeals[index] = { id: mealId, ...data };
-                } else if (change.type === "removed") {
-                    allMeals = allMeals.filter(m => m.id !== mealId);
-                }
-            });
-
-            if (!needsUiUpdate) return;
-            allMeals.sort((a, b) => b.jsDate - a.jsDate);
-            
-            // FIX: Invalidate the daily meals cache to force re-rendering with fresh data.
-            dailyMealsCache = {};
-            recalculateDailyTotals();
-            updateAllUI();
-        }    }, (error) => {
-        console.error("Errore nel listener dei pasti (onSnapshot):", error);
-        showToast("Errore nel caricare i pasti in tempo reale.", true);
+    mealsUnsubscribe?.();
+    if (!userId) return;
+    const generation = ++mealListenerGeneration;
+    const owner = userId;
+    const days = weekDates(selectedDate);
+    const { start } = getDayBounds(days[0]);
+    const { end } = getDayBounds(selectedDate);
+    days.forEach(day => dayLoadStates[dayKey(day)] = 'loading');
+    renderHistoryStatus();
+    renderSelectedDayMeals();
+    const request = query(collection(db, `users/${owner}/meals`), where('date', '>=', Timestamp.fromDate(start)), where('date', '<=', Timestamp.fromDate(end)));
+    mealsUnsubscribe = onSnapshot(request, { includeMetadataChanges: true }, snapshot => {
+        if (owner !== userId || generation !== mealListenerGeneration) return;
+        const incoming = snapshot.docs.map(entry => ({ id: entry.id, ...entry.data(), jsDate: entry.data().date.toDate(), pending: entry.metadata.hasPendingWrites }));
+        const affected = new Set();
+        const incomingById = new Map(incoming.map(meal => [meal.id, meal]));
+        allMeals.filter(meal => meal.jsDate >= start && meal.jsDate <= end).forEach(meal => {
+            const next = incomingById.get(meal.id);
+            if (!next || mealContent(next) !== mealContent(meal)) affected.add(dayKey(meal.jsDate));
+        });
+        const previousById = new Map(allMeals.map(meal => [meal.id, meal]));
+        incoming.forEach(meal => {
+            if (mealContent(previousById.get(meal.id)) !== mealContent(meal)) affected.add(dayKey(meal.jsDate));
+        });
+        allMeals = [...allMeals.filter(meal => meal.jsDate < start || meal.jsDate > end), ...incoming];
+        days.forEach(day => dayLoadStates[dayKey(day)] = snapshot.metadata.fromCache ? 'cached' : 'ready');
+        snapshotPending = snapshot.metadata.hasPendingWrites;
+        renderSyncStatus(); renderHistoryStatus();
+        affected.forEach(recalculateDay);
+        // Status transitions must also repaint empty states; unchanged lists are preserved.
+        renderSelectedDayMeals();
+        if (mealEntry?.currentView() === 'library') renderWeeklyHistory();
+        if (affected.size && mealEntry?.currentView() === 'insights') showInsights();
+    }, error => {
+        if (owner !== userId || generation !== mealListenerGeneration) return;
+        days.forEach(day => dayLoadStates[dayKey(day)] = 'error');
+        renderHistoryStatus(); renderSelectedDayMeals();
+        console.error('Caricamento storico:', error);
     });
+}
+function recalculateDay(key) {
+    delete dailyMealsCache[key];
+    const meals = allMeals.filter(meal => dayKey(meal.jsDate) === key);
+    if (!meals.length) { delete dailyTotalsCache[key]; return; }
+    const totals = emptyTotals();
+    meals.forEach(meal => addTotals(totals, mealNutrition(meal)));
+    dailyTotalsCache[key] = totals;
+}
+function renderHistoryStatus() {
+    const state = dayLoadStates[dayKey(selectedDate)];
+    document.getElementById('history-status').textContent = state === 'loading' ? 'Caricamento della settimana…'
+        : state === 'cached' ? 'Dati disponibili sul dispositivo: lo storico potrebbe essere incompleto.'
+        : state === 'error' ? 'Impossibile caricare lo storico. I dati già disponibili restano visibili.' : '';
+    document.getElementById('retry-history').classList.toggle('hidden', state !== 'error');
 }
 
 function listenToRecipes() {
@@ -681,16 +792,19 @@ function listenToRecipes() {
 }
 
 async function loadNutritionGoals() {
-    if (!userId || !isOnline) return;
+    if (!userId) return;
+    const owner = userId;
     try {
         const goalsDoc = doc(db, `users/${userId}/goals/nutrition`);
         const docSnap = await getDoc(goalsDoc);
+        if (owner !== userId) return;
         if (docSnap.exists()) {
             const loadedGoals = docSnap.data();
             // Unisce gli obiettivi caricati con quelli di default per garantire che tutti i campi esistano
             nutritionGoals = { ...nutritionGoals, ...loadedGoals };
         } else {
-            await setDoc(goalsDoc, nutritionGoals); // Salva gli obiettivi di default per i nuovi utenti
+            const defaults = { ...nutritionGoals };
+            if (isOnline && !docSnap.metadata.fromCache) queueWrite(() => setDoc(goalsDoc, defaults), 'Salvataggio obiettivi iniziali');
         }
         updateGoalsInputs();
     } catch (error) {
@@ -712,8 +826,8 @@ async function saveNutritionGoals() {
     }
 }
 
-async function addMeal() {
-    if (!isOnline) return showToast("Sei offline. Impossibile aggiungere.", true);
+async function addMeal(keepOpen = false) {
+    if (!userId) return;
     
     const quantity = portionPicker.quantity();
     if (!positive(quantity)) return showToast('Inserisci una quantità maggiore di zero.', true);
@@ -783,23 +897,13 @@ async function addMeal() {
 
     try {
         addBtn.disabled = true;
+        document.getElementById('add-another-meal-btn').disabled = true;
         addBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Aggiungo...`;
 
         const mealDate = getMealTimestamp(mealType, selectedDate);
 
-        const { start, end } = getDayBounds(selectedDate);
-        const mealsOnDayQuery = query(
-            collection(db, `users/${userId}/meals`),
-            where('date', '>=', Timestamp.fromDate(start)),
-            where('date', '<=', Timestamp.fromDate(end))
-        );
-        const querySnapshot = await getDocs(mealsOnDayQuery);
-        const maxIndex = querySnapshot.docs.reduce((max, doc) => {
-            const currentIdx = doc.data().sortIndex;
-            return (currentIdx !== undefined && currentIdx > max) ? currentIdx : max;
-        }, -1);
-        const sortIndex = maxIndex + 1;
-        
+        // Ordering needs no server round trip and works offline.
+        const sortIndex = Date.now();
         let docToAdd = {
             name: mealData.name,
             quantity: mealData.quantity,
@@ -811,6 +915,8 @@ async function addMeal() {
             portion: portionSnapshot,
             customUnit: customUnitSnapshot,
             estimated: Boolean(foodSnapshot?.estimated),
+            estimate: foodSnapshot?.estimate || null,
+            aiEstimate: foodSnapshot?.aiEstimate || null,
             isCustom: mealData.isCustom
         };
 
@@ -829,17 +935,20 @@ async function addMeal() {
             docToAdd.fats = mealData.fats || 0;
             docToAdd.fibers = mealData.fibers || 0;
         }
-        await addDoc(collection(db, `users/${userSnapshot}/meals`), docToAdd);
+        const ref = doc(collection(db, `users/${userSnapshot}/meals`));
         const foodToRemember = foodSnapshot || { name: mealData.name, ...nutritionPer100g(mealData) };
-        rememberPortion(localStorage, userSnapshot, foodToRemember, quantity, docToAdd.portion, docToAdd.customUnit);
-        renderRecentPortions();
-        showToast('Pasto aggiunto al diario!');
-        if (selectedFood === foodSnapshot && portionPicker.quantity() === quantity) resetAddMealForm();
+        queueWrite(() => setDoc(ref, docToAdd), 'Aggiunta del pasto', () => {
+            rememberPortion(localStorage, userSnapshot, foodToRemember, quantity, docToAdd.portion, docToAdd.customUnit);
+            renderRecentPortions();
+        });
+        showToast(keepOpen ? 'Pasto registrato. Aggiungi il prossimo alimento.' : 'Pasto registrato.');
+        if (selectedFood === foodSnapshot && portionPicker.quantity() === quantity) resetAddMealForm(keepOpen, mealType);
     } catch (error) {
         console.error("Errore aggiunta pasto:", error);
         showToast("Si è verificato un errore.", true);
     } finally {
         addBtn.disabled = false;
+        document.getElementById('add-another-meal-btn').disabled = false;
         addBtn.innerHTML = originalBtnHTML;
     }
 }
@@ -855,7 +964,7 @@ function selectMealFood(food, saved = null) {
     selectedFood = food;
     document.getElementById('food-search').value = food.name;
     document.getElementById('search-results').classList.add('hidden');
-    const previous = saved || readPortionHistory(localStorage, userId).find(entry => entry.key === foodKey(food));
+    const previous = saved || readPortionHistory(localStorage, userId).find(entry => entry.key === foodKey(food)) || (food.portion && positive(food.quantity) ? food : null);
     portionPicker.select(food, previous);
     updateMealPreview();
     mealEntry?.select(food);
@@ -972,6 +1081,8 @@ async function addToFavorites() {
             packageGrams: selectedFood.packageGrams || null,
             barcode: selectedFood.barcode || null,
             estimated: Boolean(selectedFood.estimated),
+            estimate: selectedFood.estimate || null,
+            aiEstimate: selectedFood.aiEstimate || null,
             createdAt: existingFavorite?.createdAt || Timestamp.now()
         };
 
@@ -998,38 +1109,43 @@ async function removeFavoriteMeal(mealId) {
 }
 
 async function deleteMeal(mealId) {
-    if (!isOnline) return showToast("Sei offline. Impossibile eliminare.", true);
-    
-    showConfirmationModal("Sei sicuro di voler eliminare questo pasto?", async () => {
-        try {
-            await deleteDoc(doc(db, `users/${userId}/meals`, mealId));
-            showToast('Pasto eliminato con successo!');
-        } catch (error) {
-            console.error("Errore eliminazione pasto:", error);
-            showToast("Errore durante l'eliminazione.", true);
-        }
-    });
+    const meal = allMeals.find(item => item.id === mealId);
+    if (!meal || !userId) return;
+    const owner = userId;
+    const ref = doc(db, `users/${owner}/meals`, mealId);
+    const restored = { ...mealTemplate(meal), type: meal.type, date: Timestamp.fromDate(meal.jsDate), sortIndex: meal.sortIndex || 0 };
+    queueWrite(() => deleteDoc(ref), 'Eliminazione del pasto', undefined, ref.path);
+    const notice = document.createElement('div');
+    notice.className = 'undo-notice';
+    const label = document.createElement('span'); label.textContent = `${meal.name} eliminato`;
+    const button = document.createElement('button'); button.className = 'text-button'; button.textContent = 'Annulla';
+    button.addEventListener('click', () => {
+        if (userId === owner) queueWrite(() => setDoc(ref, restored), 'Ripristino del pasto', undefined, ref.path);
+        notice.remove();
+    }, { once: true });
+    notice.append(label, button); document.getElementById('undo-notices').append(notice);
+    setTimeout(() => notice.remove(), 10000);
 }
 
 async function saveMealChanges() {
-    if (!isOnline) return showToast("Sei offline. Impossibile salvare.", true);
     if (!mealToEditId) return;
 
-    const newQuantity = parseFloat(document.getElementById('edit-meal-quantity').value);
+    const amount = Number(document.getElementById('edit-meal-quantity').value);
     const newName = document.getElementById('edit-meal-name-input').value.trim();
     const newType = document.getElementById('edit-meal-type').value;
     const mealRef = doc(db, `users/${userId}/meals`, mealToEditId);
     const mealToEdit = allMeals.find(m => m.id === mealToEditId);
     if (!mealToEdit) return showToast('Pasto non trovato.', true);
-    if (!newName || !positive(newQuantity)) return showToast('Inserisci un nome e una quantità maggiore di zero.', true);
+    if (!newName || !positive(amount)) return showToast('Inserisci un nome e una quantità maggiore di zero.', true);
+    const edited = editPortion(editedMealEstimate || mealToEdit, amount, document.getElementById('edit-meal-unit').value === 'original');
+    const newQuantity = edited.quantity;
     
     let dataToUpdate = {
+        ...(editedMealEstimate ? mealTemplate(editedMealEstimate) : {}),
         name: newName,
         type: newType,
-        date: getMealTimestamp(newType, selectedDate),
-        quantity: newQuantity,
-        portion: newQuantity === mealToEdit.quantity ? mealToEdit.portion || null
-            : { unitId: 'g', label: 'Grammi', amount: newQuantity, gramsPerUnit: 1, source: 'Peso modificato' }
+        date: Timestamp.fromDate(getMealTimestamp(newType, mealToEdit.jsDate || selectedDate)),
+        ...edited
     };
 
     if (mealToEdit.isCustom) {
@@ -1057,7 +1173,7 @@ async function saveMealChanges() {
     }
 
     try {
-        await updateDoc(mealRef, dataToUpdate);
+        queueWrite(() => updateDoc(mealRef, dataToUpdate), 'Modifica del pasto', undefined, mealRef.path);
         showToast('Pasto aggiornato con successo!');
         document.getElementById('edit-meal-modal').classList.add('hidden');
         mealToEditId = null;
@@ -1158,7 +1274,7 @@ async function saveFoodChanges() {
  * @param {object} foodData - Oggetto con i dati dell'alimento (name, calories, etc.).
  */
 async function addNewFoodFromData(foodData) {
-    if (!isOnline) return; // Non salva se offline
+    if (!isOnline) { showToast('Pasto registrabile offline; per aggiungere il nuovo alimento al database riprova con la rete.', true); return; }
 
     const { name, calories, proteins, carbs, fats, fibers } = foodData;
 
@@ -1377,8 +1493,8 @@ function listenToFavoriteMeals() {
 function updateAllUI() {
     updateDateDisplay();
     renderSelectedDayMeals();
-    renderWeeklyHistory();
-    updateCharts(dailyTotalsCache, selectedDate);
+    if (mealEntry?.currentView() === 'library') renderWeeklyHistory();
+    if (mealEntry?.currentView() === 'insights') showInsights();
     updateFavoriteMealsUI();
     renderRecentPortions();
 }
@@ -1472,6 +1588,7 @@ function renderSelectedDayMeals() {
                         <!-- I totali verranno aggiornati qui -->
                     </div>
                 </div>
+                <div class="category-tools"><button class="text-button" data-group-action="repeat">Ripeti da ieri</button><button class="text-button" data-group-action="save">Salva come abituale</button><button class="text-button" data-group-action="add">＋ Aggiungi</button></div>
                 <div class="p-4 space-y-3 meal-list-container">
                     <!-- I pasti verranno renderizzati qui -->
                 </div>
@@ -1485,6 +1602,9 @@ function renderSelectedDayMeals() {
         if (!categoryElement) return; // Salta se l'elemento non esiste
 
         const listContainer = categoryElement.querySelector('.meal-list-container');
+        const signature = JSON.stringify([meals.map(({ pending, ...meal }) => meal), meals.length ? null : dayLoadStates[dateKey]]);
+        if (listContainer.dataset.signature === signature) return;
+        listContainer.dataset.signature = signature;
         const totalsContainer = categoryElement.querySelector('.category-totals');
         const categoryTotals = emptyTotals();
         let mealsHTML = '';
@@ -1495,10 +1615,12 @@ function renderSelectedDayMeals() {
                 const calculated = mealNutrition(meal);
                 addTotals(categoryTotals, calculated);
                 return `
-                <div class="meal-item is-entering flex flex-col md:flex-row md:items-center p-4" data-id="${meal.id}">
+                <div class="meal-item flex flex-col md:flex-row md:items-center p-4" data-id="${meal.id}">
                     <div class="flex-1 min-w-0">
                         <p class="font-medium text-slate-200 break-words">${escapeText(meal.name)}</p>
-                        <p class="text-sm text-slate-300 mt-1">${escapeText(portionDescription(meal.portion) || `${formatAmount(meal.quantity || 0)} g`)}${meal.estimated ? ' · Stima da foto' : ''}</p>
+                        <p class="text-sm text-slate-300 mt-1">${escapeText(portionDescription(meal.portion) || `${formatAmount(meal.quantity || 0)} g`)}${meal.estimated ? ` · ${estimateLabel(meal)}` : ''}</p>
+                        ${meal.estimate ? `<details class="meal-estimate-detail"><summary>${escapeText(estimateRange(meal))}</summary><p>${escapeText(estimateBreakdown(meal))}</p><p>Quantità e valori approssimativi. Nel totale è usata la stima centrale; l’intervallo è convenzionale.</p></details>` : ''}
+                        ${meal.aiEstimate ? `<details class="meal-estimate-detail"><summary>Ipotesi della stima da descrizione</summary><p>${escapeText((meal.aiEstimate.assumptions || []).join(' '))}</p><p>${escapeText(meal.aiEstimate.notes || '')}</p>${meal.aiEstimate.edited ? '<p>Valori o nome corretti manualmente prima dell’inserimento.</p>' : ''}</details>` : ''}
                         <p class="text-xs md:text-sm text-slate-400 mt-1 meal-nutrition-details">
                             ${calculated.calories.toFixed(0)} kcal · P ${calculated.proteins.toFixed(1)} · C ${calculated.carbs.toFixed(1)} · G ${calculated.fats.toFixed(1)}
                         </p>
@@ -1512,23 +1634,15 @@ function renderSelectedDayMeals() {
                 </div>`;
             }).join('');
         } else {
-            mealsHTML = `<div class="text-center text-slate-500 italic py-4">Nessun pasto registrato</div>`;
+            const emptyMessage = dayLoadStates[dateKey] === 'loading' ? 'Caricamento…' : dayLoadStates[dateKey] === 'cached' || dayLoadStates[dateKey] === 'error' ? 'Nessun pasto disponibile sul dispositivo' : 'Nessun pasto registrato';
+            mealsHTML = `<div class="text-center text-slate-500 italic py-4">${emptyMessage}</div>`;
         }
         
         // Aggiorna solo il contenuto della lista e dei totali, preservando la struttura.
         listContainer.innerHTML = mealsHTML;
         totalsContainer.innerHTML = `${categoryTotals.calories.toFixed(0)} kcal`;
 
-        // Applica l'animazione di entrata ai nuovi elementi
-        const newItems = listContainer.querySelectorAll('.meal-item.is-entering');
-        if (newItems.length > 0) {
-            requestAnimationFrame(() => {
-                newItems.forEach(item => {
-                    void item.offsetHeight; // Forza il reflow
-                    item.classList.remove('is-entering');
-                });
-            });
-        }
+
     });
     
     // initSortableLists();
@@ -1610,14 +1724,14 @@ function renderRecipes() {
 function renderWeeklyHistory() {
     const container = document.getElementById('weekly-history');
     container.innerHTML = '';
-    const today = getTodayUTC(); // Fissa "oggi" (UTC) all'inizio per coerenza
+    const today = new Date(selectedDate);
     
     for (let i = 6; i >= 0; i--) {
         const date = new Date(today); // Crea una copia di "oggi"
         date.setUTCDate(today.getUTCDate() - i); // Sottrai i giorni dalla data fissata
         const dateKey = date.toISOString().split('T')[0];
         const totals = dailyTotalsCache[dateKey] || { calories: 0, proteins: 0, carbs: 0, fats: 0, fibers: 0 };
-        const isToday = i === 0; // Modo più semplice e affidabile per verificare se è oggi
+        const isToday = dateKey === dayKey(getTodayUTC());
         const dateClass = isToday ? 'font-bold text-indigo-400' : '';
         
         const row = document.createElement('tr');
@@ -1633,6 +1747,15 @@ function renderWeeklyHistory() {
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-300">${waterHistory[dateKey] || 0} bicchieri</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-400">${dailyMealsCache[dateKey] ? Object.values(dailyMealsCache[dateKey]).length : 0} pasti</td>
         `;
+        if (!dailyTotalsCache[dateKey]) {
+            [...row.children].slice(1, 6).forEach(cell => cell.textContent = '—');
+        }
+        row.lastElementChild.textContent = `${allMeals.filter(meal => dayKey(meal.jsDate) === dateKey).length} alimenti`;
+        row.tabIndex = 0;
+        row.setAttribute('aria-label', `Apri ${formatDate(date)}`);
+        const openDay = () => { selectedDate = new Date(date); mealEntry.close(); handleDayChange(); };
+        row.addEventListener('click', openDay);
+        row.addEventListener('keydown', event => { if (event.key === 'Enter') openDay(); });
         container.appendChild(row);
     }
 }
@@ -1651,8 +1774,9 @@ function updateNutritionProgress() {
             console.warn(`Tentativo di aggiornare ${id} con un valore non valido:`, value);
             return; // Interrompe l'aggiornamento se il valore non è un numero
         }
-        document.getElementById(id).textContent = numericValue.toFixed(decimals);
-        triggerFlashAnimation(id);
+        const element = document.getElementById(id);
+        const text = numericValue.toFixed(decimals);
+        if (element.textContent !== text) { element.textContent = text; triggerFlashAnimation(id); }
     };
 
     document.getElementById('diary-energy-goal').textContent = `Obiettivo: ${nutritionGoals.calories} kcal`;
@@ -1673,6 +1797,7 @@ function updateNutritionProgress() {
         }
         const percent = Math.min(100, (numericValue / (nutritionGoals[type] || 1)) * 100); // Evita divisione per zero
         document.getElementById(`${type}-progress`).style.width = `${percent}%`;
+        document.getElementById(`${type}-progress`).parentElement.setAttribute('aria-valuenow', String(percent));
         document.getElementById(`${type}-progress-text`).textContent = `${value.toFixed(type === 'calories' ? 0 : 1)}${type !== 'calories' ? 'g' : ''} / ${nutritionGoals[type]}${type !== 'calories' ? 'g' : ''}`;
     };
 
@@ -1879,19 +2004,10 @@ function initSortableLists() {
 // --- FUNZIONI UTILITY E HELPERS ---
 
 async function handleDayChange() {
-    const container = document.getElementById('day-meals-container');
-    container.classList.add('is-updating');
-
-    // Attendi che l'animazione di fade-out sia visibile
-    await new Promise(resolve => setTimeout(resolve, 150));
-
-    // Prima aggiorna tutta l'UI con la nuova data
     updateAllUI();
-    // Poi imposta il listener per i dati dell'acqua sulla data corretta
+    listenToMeals();
     listenToWaterData();
-
-    // Rimuovi la classe per far apparire il nuovo contenuto con un fade-in
-    container.classList.remove('is-updating');
+    listenToWaterHistory();
 }
 
 function changeDay(offset) {
@@ -1904,6 +2020,7 @@ function changeDay(offset) {
 }
 
 function handleDateChange(e) {
+    if (!e.target.value) return;
     const [year, month, day] = e.target.value.split('-').map(Number);
     // BUG FIX: Usa Date.UTC per creare la data. Questo previene problemi di fuso orario
     // dove il browser potrebbe interpretare la data come il giorno precedente.
@@ -1913,8 +2030,26 @@ function handleDateChange(e) {
 }
 
 function resetAppData() {
+    estimateEditor?.close();
+    dishEstimateEditor?.reset();
+    editedMealEstimate = null;
+    writeTracker.reset();
+    snapshotPending = false; waterPending = false; habitsPending = false; restoredWritesPending = false;
+    dayLoadStates = {};
+    dailyTotalsCache = {};
+    habitualUnsubscribe?.(); habitualUnsubscribe = null; habitualMeals = [];
+    mealListenerGeneration++;
+    chartsReady = false;
+    document.getElementById('habitual-meals').replaceChildren();
+    document.getElementById('undo-notices').replaceChildren();
+    closeMealGroup();
+    hideConfirmationModal();
+    document.getElementById('edit-meal-modal').classList.add('hidden');
+    mealToEditId = null;
+
     resetAddMealForm();
     allMeals = [];
+    nutritionGoals = { calories: 2000, proteins: 150, carbs: 250, fats: 70, fibers: 30, water: 8 };
     recipes = [];
     dailyMealsCache = {}; // Pulisce la cache al logout
     destroyCharts();
@@ -1928,6 +2063,7 @@ function resetAppData() {
     document.getElementById('weekly-history').innerHTML = '';
     favoriteMeals = [];
     selectedFood = null;
+    foods = [];
     portionPicker.select();
     document.getElementById('food-search').value = '';
     updateMealPreview();
@@ -1972,52 +2108,13 @@ function showFoodLookupDetails(food) {
 }
 
 async function setWaterCount(newCount) {
-    const finalCount = Math.max(0, newCount);
-    if (isNaN(finalCount)) return;
-
-    // Aggiornamento ottimistico: aggiorna subito l'UI
-    waterCount = finalCount;
-    renderWaterTracker();
-
-    // Poi salva su Firestore in background
-    if (!userId || !isOnline) {
-        if (!isOnline) showToast("Sei offline. Il conteggio non verrà salvato.", true);
-        return;
-    }
-    const dateString = selectedDate.toISOString().split('T')[0];
-    const waterDocRef = doc(db, `users/${userId}/water`, dateString);
-
-    try {
-        await setDoc(waterDocRef, { count: finalCount }, { merge: true });
-    } catch (error) {
-        console.error("Errore salvataggio acqua (setWaterCount):", error);
-        showToast("Errore nel salvare il conteggio dell'acqua.", true);
-        // Se il salvataggio fallisce, potremmo voler ripristinare il valore precedente,
-        // ma per ora il listener onSnapshot dovrebbe gestire la coerenza.
-    }
+    const count = Math.max(0, Number(newCount));
+    if (!Number.isFinite(count) || !userId) return;
+    const ref = doc(db, `users/${userId}/water`, dayKey(selectedDate));
+    waterCount = count; renderWaterTracker();
+    queueWrite(() => setDoc(ref, { count }, { merge: true }), 'Salvataggio dell’acqua', undefined, ref.path);
 }
-
-async function incrementWaterCount(amount) {
-    const newCount = waterCount + amount;
-    const finalCount = Math.max(0, newCount);
-
-    // Aggiornamento ottimistico: aggiorna subito l'UI
-    waterCount = finalCount;
-    renderWaterTracker();
-
-    // Poi salva su Firestore in background
-    if (!userId || !isOnline) {
-        if (!isOnline) showToast("Sei offline. Il conteggio non verrà salvato.", true);
-        return;
-    }
-
-    const dateString = selectedDate.toISOString().split('T')[0];
-    const waterDocRef = doc(db, `users/${userId}/water`, dateString);
-    setDoc(waterDocRef, { count: finalCount }, { merge: true }).catch(e => {
-        console.error("Salvataggio acqua fallito: ", e);
-        showToast("Errore nell'aggiornare il conteggio dell'acqua.", true);
-    });
-}
+async function incrementWaterCount(amount) { return setWaterCount(waterCount + amount); }
 
 function listenToWaterData() {
     if (waterUnsubscribe) {
@@ -2030,14 +2127,19 @@ function listenToWaterData() {
     }
 
     const dateString = selectedDate.toISOString().split('T')[0];
-    const waterDocRef = doc(db, `users/${userId}/water`, dateString);
+    const owner = userId;
+    const waterDocRef = doc(db, `users/${owner}/water`, dateString);
 
-    waterUnsubscribe = onSnapshot(waterDocRef, (doc) => {
+    waterUnsubscribe = onSnapshot(waterDocRef, { includeMetadataChanges: true }, (doc) => {
+        if (dayKey(selectedDate) !== dateString || userId !== owner) return;
+        waterPending = doc.metadata.hasPendingWrites;
         const data = doc.data();
         const newCount = data?.count || 0;
         waterCount = newCount; // Aggiorna il valore globale
         renderWaterTracker();
+        renderSyncStatus();
     }, (error) => {
+        if (dayKey(selectedDate) !== dateString || userId !== owner) return;
         console.error("Errore nel listener dell'acqua:", error);
         waterCount = 0;
         renderWaterTracker();
@@ -2050,22 +2152,23 @@ function listenToWaterHistory() {
     }
     if (!userId) return;
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const dateString = thirtyDaysAgo.toISOString().split('T')[0];
+    const owner = userId;
+    const selectedKey = dayKey(selectedDate);
+    const dateString = dayKey(weekDates(selectedDate)[0]);
 
     const waterQuery = query(
         collection(db, `users/${userId}/water`),
-        where(documentId(), '>=', dateString)
+        where(documentId(), '>=', dateString), where(documentId(), '<=', dayKey(selectedDate))
     );
 
     waterHistoryUnsubscribe = onSnapshot(waterQuery, (snapshot) => {
+        if (userId !== owner || dayKey(selectedDate) !== selectedKey) return;
         const newHistory = {};
         snapshot.forEach(doc => {
             newHistory[doc.id] = doc.data().count;
         });
         waterHistory = newHistory;
-        renderWeeklyHistory(); // Re-render the history table when data arrives/changes
+        if (mealEntry?.currentView() === 'library') renderWeeklyHistory();
     }, (error) => {
         console.error("Errore nel listener dello storico acqua:", error);
     });
@@ -2081,6 +2184,8 @@ function openEditMealModal(mealId) {
     }
 
     mealToEditId = mealId;
+    editedMealEstimate = null;
+    document.getElementById('edit-saved-estimate-btn').classList.toggle('hidden', !meal.estimate);
 
     const standardFields = document.getElementById('edit-standard-meal-fields');
     const customFields = document.getElementById('edit-custom-meal-fields');
@@ -2102,6 +2207,13 @@ function openEditMealModal(mealId) {
         document.getElementById('edit-meal-quantity').value = meal.quantity;
     }
 
+    const unitSelect = document.getElementById('edit-meal-unit');
+    const original = meal.portion && positive(meal.portion.gramsPerUnit);
+    unitSelect.innerHTML = `${original ? `<option value="original">${escapeText(meal.portion.label || 'Misura originale')}</option>` : ''}<option value="g">Grammi${meal.portion?.ingredientWeight ? ' di ingredienti' : ''}</option>`;
+    unitSelect.value = original ? 'original' : 'g';
+    unitSelect.dataset.previous = unitSelect.value;
+    document.getElementById('edit-meal-quantity').value = original ? meal.quantity / meal.portion.gramsPerUnit : meal.quantity;
+    updateEditPortionHint();
     document.getElementById('edit-meal-modal').classList.remove('hidden');
     document.getElementById('edit-meal-modal').classList.add('flex');
     document.getElementById('edit-meal-name-input').focus();
@@ -2304,7 +2416,7 @@ function recalculateDailyTotals() {
 }
 
 
-function resetAddMealForm() {
+function resetAddMealForm(keepOpen = false, mealType = getDefaultMealTypeByTime()) {
     document.getElementById('food-search').value = '';
     const quantityInput = document.getElementById('meal-quantity');
     quantityInput.value = '';
@@ -2315,7 +2427,7 @@ function resetAddMealForm() {
     updateMealPreview(); // Nasconde l'anteprima
 
     // Imposta il tipo di pasto in base all'orario corrente
-    document.getElementById('meal-type').value = getDefaultMealTypeByTime();
+    document.getElementById('meal-type').value = mealType;
 
     // Resetta anche il form del pasto personalizzato
     document.getElementById('custom-meal-name').value = '';
@@ -2327,7 +2439,8 @@ function resetAddMealForm() {
     if (isCustomMealMode) {
         toggleCustomMealForm(); // Torna alla modalità di ricerca
     }
-    mealEntry?.reset();
+    mealEntry?.reset(keepOpen);
+    if (keepOpen) document.getElementById('food-search').focus();
 }
 
 function initializeMealTypeByTime() {
@@ -2460,130 +2573,90 @@ function exitRecipeEditMode() {
 
 // --- Funzioni di ricerca ---
 
-function setupSearchHandler({ inputElement, resultsContainer, searchFunction, onResultClick, itemRenderer }) {
+function setupSearchHandler({ inputElement, searchFunction, onResultClick, itemRenderer }) {
     let currentResults = [];
-    let dynamicDropdown = null;
-    let searchGeneration = 0; // Contatore per scartare risultati di ricerche precedenti (race condition)
-
-    const debouncedSearch = debounce(async (searchTerm) => {
-        const generation = ++searchGeneration;
-        if (searchTerm.length >= 2) {
-            const results = await searchFunction(searchTerm);
-            // Se nel frattempo è partita un'altra ricerca, ignora questi risultati
-            if (generation !== searchGeneration || !inputElement.getClientRects().length) return;
-            currentResults = results;
-            const renderedHTML = currentResults.length > 0 ? currentResults.map(itemRenderer).join('') : `<div class="p-4 text-slate-500">Nessun risultato.</div>`;
-
-            // Remove existing dropdown
-            if (dynamicDropdown) {
-                dynamicDropdown.remove();
-            }
-
-            // Create new dropdown directly in body
-            dynamicDropdown = document.createElement('div');
-            dynamicDropdown.innerHTML = renderedHTML;
-            dynamicDropdown.id = 'dynamic-search-results';
-
-            // Apply styles with maximum priority
-            const inputRect = inputElement.getBoundingClientRect();
-            const styles = {
-                'position': 'fixed',
-                'top': (inputRect.bottom + 8) + 'px',
-                'left': inputRect.left + 'px',
-                'width': inputRect.width + 'px',
-                'max-height': '300px',
-                'min-height': '50px',
-                'background-color': 'var(--surface)',
-                'border': '1px solid var(--line)',
-                'border-radius': '16px',
-                'z-index': '2147483647',
-                'display': 'block',
-                'visibility': 'visible',
-                'opacity': '1',
-                'overflow-y': 'auto',
-                'box-shadow': '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-                'backdrop-filter': 'blur(20px)',
-                '-webkit-backdrop-filter': 'blur(20px)',
-                'pointer-events': 'auto'
+    let dropdown = null;
+    let generation = 0;
+    function close() {
+        generation++;
+        dropdown?._cleanup?.(); dropdown?.remove(); dropdown = null;
+        inputElement.setAttribute('aria-expanded', 'false');
+    }
+    function render(results, message = '') {
+        currentResults = results;
+        if (!dropdown || !dropdown.isConnected) {
+            dropdown?._cleanup?.();
+            dropdown = document.createElement('div');
+            dropdown.id = 'dynamic-search-results';
+            dropdown.className = 'search-dropdown';
+            const position = () => {
+                const rect = inputElement.getBoundingClientRect();
+                dropdown.style.top = `${rect.bottom + 4}px`;
+                dropdown.style.left = `${rect.left}px`;
+                dropdown.style.width = `${rect.width}px`;
+                dropdown.style.maxHeight = `${Math.max(80, Math.min(300, window.innerHeight - rect.bottom - 16))}px`;
             };
-
-            // Apply all styles
-            Object.entries(styles).forEach(([prop, value]) => {
-                dynamicDropdown.style.setProperty(prop, value, 'important');
-            });
-
-            // Append to body (bypasses any container issues)
-            document.body.appendChild(dynamicDropdown);
-
-            // Update position on scroll to keep dropdown attached to input
-            const updatePosition = () => {
-                if (dynamicDropdown && document.body.contains(dynamicDropdown)) {
-                    const rect = inputElement.getBoundingClientRect();
-                    dynamicDropdown.style.setProperty('top', (rect.bottom + 8) + 'px', 'important');
-                    dynamicDropdown.style.setProperty('left', rect.left + 'px', 'important');
-                    dynamicDropdown.style.setProperty('width', rect.width + 'px', 'important');
-                }
+            window.addEventListener('scroll', position, { passive: true, capture: true });
+            window.addEventListener('resize', position, { passive: true });
+            dropdown._cleanup = () => {
+                window.removeEventListener('scroll', position, true);
+                window.removeEventListener('resize', position);
             };
-
-            // Add scroll listener to update position
-            window.addEventListener('scroll', updatePosition, { passive: true });
-            window.addEventListener('resize', updatePosition, { passive: true });
-
-            // Store the cleanup function
-            dynamicDropdown._cleanup = () => {
-                window.removeEventListener('scroll', updatePosition);
-                window.removeEventListener('resize', updatePosition);
-            };
-
-            dynamicDropdown.addEventListener('keydown', event => {
-                if ((event.key === 'Enter' || event.key === ' ') && event.target.closest('.search-item')) {
-                    event.preventDefault(); event.target.closest('.search-item').click();
-                }
-                if (event.key === 'Escape') { dynamicDropdown._cleanup?.(); dynamicDropdown.remove(); dynamicDropdown = null; inputElement.focus(); }
+            dropdown.addEventListener('click', event => {
+                const item = event.target.closest('.search-item');
+                const chosen = item && currentResults.find(result => String(result.id) === item.dataset.itemId);
+                if (chosen) { close(); onResultClick(chosen); }
             });
-            // Add click handler to dynamic dropdown
-            dynamicDropdown.addEventListener('click', (e) => {
-                const itemElement = e.target.closest('.search-item');
-                if (itemElement) {
-                    const itemId = itemElement.dataset.itemId;
-                    const selectedItem = currentResults.find(item => item.id === itemId);
-                    if (selectedItem) {
-                        onResultClick(selectedItem);
-                        if (dynamicDropdown._cleanup) dynamicDropdown._cleanup();
-                        dynamicDropdown.remove();
-                        dynamicDropdown = null;
-                        inputElement.blur();
-                    }
+            dropdown.addEventListener('keydown', event => {
+                const buttons = [...dropdown.querySelectorAll('.search-item')];
+                const index = buttons.indexOf(event.target.closest('.search-item'));
+                if (event.key === 'Escape') { close(); inputElement.focus(); }
+                if (['ArrowDown', 'ArrowUp'].includes(event.key)) {
+                    event.preventDefault(); buttons[(index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus();
                 }
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); buttons[index]?.click(); }
             });
-        } else {
-            // Hide dropdown when search term is too short
-            if (dynamicDropdown) {
-                if (dynamicDropdown._cleanup) dynamicDropdown._cleanup();
-                dynamicDropdown.remove();
-                dynamicDropdown = null;
-            }
-            currentResults = [];
+            document.body.append(dropdown); position();
         }
-    }, 500);
-
+        dropdown.innerHTML = results.map(itemRenderer).join('') + (message ? `<p class="p-4 muted" role="status">${escapeText(message)}</p>` : '');
+        inputElement.setAttribute('aria-expanded', 'true');
+    }
+    const remoteSearch = debounce(async (term, token) => {
+        if (token !== generation) return;
+        try {
+            const results = await searchFunction(term);
+            if (token !== generation || !inputElement.getClientRects().length || !dropdown?.isConnected) return;
+            render(results, results.searchWarning || (results.length ? '' : 'Nessun risultato. Prova un altro nome.'));
+        } catch {
+            if (token === generation && inputElement.getClientRects().length && dropdown?.isConnected) render(currentResults, 'Ricerca online non disponibile. Risultati salvati sul dispositivo; riprova tra poco.');
+        }
+    }, 250);
+    inputElement.addEventListener('input', () => {
+        const term = normalizeQuery(inputElement.value);
+        const token = ++generation;
+        if (term.length < 2) { close(); return; }
+        const onlyFoods = searchFunction === searchFoodsOnly;
+        render(localSearch(term, onlyFoods), isOnline ? 'Cerco altri risultati…' : 'Risultati disponibili sul dispositivo');
+        remoteSearch(term, token);
+    });
     inputElement.addEventListener('keydown', event => {
-        if (event.key === 'ArrowDown' && dynamicDropdown) {
-            event.preventDefault(); dynamicDropdown.querySelector('.search-item')?.focus();
-        }
+        if (event.key === 'ArrowDown' && dropdown) { event.preventDefault(); dropdown.querySelector('.search-item')?.focus(); }
+        if (event.key === 'Escape') close();
     });
-    inputElement.addEventListener('input', (e) => {
-        debouncedSearch(e.target.value.toLowerCase());
+    document.addEventListener('click', event => {
+        if (dropdown && !dropdown.contains(event.target) && event.target !== inputElement) close();
     });
-
-    // Clean up on click outside
-    document.addEventListener('click', (e) => {
-        if (dynamicDropdown && !dynamicDropdown.contains(e.target) && !inputElement.contains(e.target)) {
-            if (dynamicDropdown._cleanup) dynamicDropdown._cleanup();
-            dynamicDropdown.remove();
-            dynamicDropdown = null;
-        }
+}
+function localSearch(term, onlyFoods = false) {
+    const recent = readPortionHistory(localStorage, userId).map(entry => entry.food);
+    const candidates = [...foods, ...recipes.map(recipe => ({ ...recipe, isRecipe: true })), ...recent, ...favoriteMeals.map(meal => ({ ...meal, isRecipe: false }))];
+    const results = new Map();
+    candidates.forEach(item => {
+        if (onlyFoods && (item.isRecipe || item.recipeId)) return;
+        const id = item.id || item.foodId || foodKey(item);
+        if (!results.has(id)) results.set(id, { ...item, id });
     });
+    return rankResults(results, term);
 }
 
 // Cerca alimenti su Firestore per prefisso del nome e per parola, e aggiorna la cache on-demand.
@@ -2599,7 +2672,9 @@ async function fetchFoodMatches(searchTerm) {
     if (token) queries.push(query(collection(db, 'foods'), where('search_tokens', 'array-contains', token), limit(20)));
     const snapshots = await Promise.allSettled(queries.map(q => getDocs(q)));
 
+    if (snapshots.every(result => result.status === 'rejected')) throw new Error('Ricerca online non disponibile');
     const matches = new Map();
+    matches.partial = snapshots.some(result => result.status === 'rejected');
     snapshots.forEach(snapshot => {
         if (snapshot.status !== 'fulfilled') return;
         snapshot.value.docs.forEach(doc => {
@@ -2607,7 +2682,8 @@ async function fetchFoodMatches(searchTerm) {
         });
     });
     matches.forEach((food, id) => {
-        if (!foods.some(f => f.id === id)) foods.push(food);
+        const index = foods.findIndex(f => f.id === id);
+        if (index < 0) foods.push(food); else foods[index] = food;
     });
     return matches;
 }
@@ -2618,64 +2694,16 @@ function rankResults(results, searchTerm) {
     return sortResults(matching, searchTerm, buildUsageStats(allMeals)).slice(0, 20);
 }
 
-async function searchFoodsOnly(searchTerm) {
-    const term = normalizeQuery(searchTerm);
-    try {
-        const results = await fetchFoodMatches(term);
-
-        // Ricerca client-side nella cache per corrispondenze parziali non coperte dalle query Firestore
-        foods.forEach(food => {
-            if (!results.has(food.id) && matchesSearch(food, term)) {
-                results.set(food.id, { ...food, isRecipe: false });
-            }
-        });
-
-        return rankResults(results, term);
-    } catch (error) {
-        console.error("Errore in searchFoodsOnly:", error);
-        showToast("Errore durante la ricerca nel database.", true);
-        return [];
-    }
-}
-
-async function searchFoodsAndRecipes(searchTerm) {
+async function searchFoodsOnly(searchTerm) { return searchAvailableFoods(searchTerm, true); }
+async function searchFoodsAndRecipes(searchTerm) { return searchAvailableFoods(searchTerm, false); }
+async function searchAvailableFoods(searchTerm, onlyFoods) {
     const term = normalizeQuery(searchTerm);
     if (term.length < 2) return [];
-
-    try {
-        const recipesQuery = query(
-            collection(db, `users/${userId}/recipes`),
-            where('name_lowercase', '>=', term),
-            where('name_lowercase', '<=', term + '\uf8ff'),
-            orderBy('name_lowercase'),
-            limit(10)
-        );
-        const [foodMatches, recipesSnapshot] = await Promise.all([
-            fetchFoodMatches(term),
-            getDocs(recipesQuery).catch(error => {
-                console.error("Errore ricerca ricette:", error);
-                return null;
-            })
-        ]);
-
-        // Le ricette vengono prima, a parità di score
-        const results = new Map();
-        recipesSnapshot?.docs.forEach(doc => results.set(doc.id, { id: doc.id, ...doc.data(), isRecipe: true }));
-        foodMatches.forEach((food, id) => results.set(id, food));
-
-        // Ricerca client-side nella cache per corrispondenze parziali non coperte dalle query Firestore
-        [...foods, ...recipes].forEach(item => {
-            if (!results.has(item.id) && matchesSearch(item, term)) {
-                results.set(item.id, { ...item, isRecipe: !!item.ingredients });
-            }
-        });
-
-        return rankResults(results, term);
-    } catch (error) {
-        console.error("Errore nella ricerca unificata:", error);
-        showToast("Errore durante la ricerca.", true);
-        return [];
-    }
+    const results = await fetchFoodMatches(term);
+    localSearch(term, onlyFoods).forEach(item => { if (!results.has(item.id)) results.set(item.id, item); });
+    const ranked = rankResults(results, term);
+    if (results.partial) ranked.searchWarning = 'Alcuni risultati online non sono disponibili. Puoi riprovare.';
+    return ranked;
 }
 
 function updateRecipeBuilderMacroBar() {
@@ -2730,6 +2758,10 @@ function updateRecipeBuilderMacroBar() {
 function updateMealPreview() {
     const previewContainer = document.getElementById('meal-preview');
     const quantity = portionPicker.quantity();
+    document.getElementById('edit-estimate-btn').classList.toggle('hidden', isCustomMealMode || !selectedFood?.estimate);
+    document.getElementById('estimate-preview-detail').textContent = isCustomMealMode ? '' : selectedFood?.aiEstimate
+        ? `Stima da descrizione. ${selectedFood.aiEstimate.assumptions.join(' ')}`
+        : selectedFood?.estimate ? `${estimateRange(selectedFood, quantity)}. ${estimateBreakdown(selectedFood, quantity)}` : '';
 
     if ((!selectedFood && !isCustomMealMode) || !Number.isFinite(quantity) || quantity <= 0) {
         previewContainer.classList.add('hidden');
@@ -2800,6 +2832,7 @@ function openAiPhotoModal() {
 }
 
 function closeAiPhotoModal() {
+    photoGeneration++;
     document.getElementById('ai-photo-modal').classList.add('hidden');
     document.getElementById('ai-photo-modal').classList.remove('flex');
     resetAiModal();
@@ -2812,6 +2845,7 @@ function resetAiModal() {
     aiLastRawResponse = null;
 
     document.getElementById('ai-photo-placeholder').classList.remove('hidden');
+    document.getElementById('ai-photo-placeholder').textContent = 'Tocca per scattare una foto o carica un’immagine (JPG, PNG, WebP).';
     document.getElementById('ai-photo-preview').classList.add('hidden');
     document.getElementById('ai-photo-preview').src = '';
     document.getElementById('ai-photo-input').value = '';
@@ -2821,6 +2855,8 @@ function resetAiModal() {
     document.getElementById('ai-error').classList.add('hidden');
     document.getElementById('ai-followup-section').classList.add('hidden');
     document.getElementById('ai-user-answer').value = '';
+    document.getElementById('ai-refine-btn').disabled = false;
+    document.getElementById('ai-refine-btn').textContent = 'Aggiorna stima';
     document.getElementById('ai-macros-grid').innerHTML = '';
     document.getElementById('ai-notes').classList.add('hidden');
 }
@@ -2838,30 +2874,28 @@ function handleSaveApiKey() {
     showToast('API key salvata.');
 }
 
-function handleAiPhotoSelect(event) {
+async function handleAiPhotoSelect(event) {
     const file = event.target.files[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const dataUrl = e.target.result;
-        // Estrai base64 e mimeType dalla data URL
-        const [meta, base64] = dataUrl.split(',');
-        aiCurrentMimeType = meta.match(/:(.*?);/)[1];
-        aiCurrentImageBase64 = base64;
-
+    const generation = ++photoGeneration;
+    resetAiModal();
+    document.getElementById('ai-photo-placeholder').textContent = 'Preparazione foto…';
+    try {
+        const dataUrl = await preparePhoto(file);
+        if (generation !== photoGeneration) return;
+        aiCurrentMimeType = 'image/jpeg';
+        aiCurrentImageBase64 = dataUrl.split(',')[1];
         document.getElementById('ai-photo-placeholder').classList.add('hidden');
         const preview = document.getElementById('ai-photo-preview');
-        preview.src = dataUrl;
-        preview.classList.remove('hidden');
+        preview.src = dataUrl; preview.classList.remove('hidden');
         document.getElementById('ai-analyze-btn').classList.remove('hidden');
-        document.getElementById('ai-results').classList.add('hidden');
-        document.getElementById('ai-error').classList.add('hidden');
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+        if (generation === photoGeneration) showAiError(error.message || 'Formato non supportato. Prova una foto JPEG o PNG.');
+    }
 }
 
 async function handleAiAnalyze() {
+    const generation = photoGeneration;
     const apiKey = getGeminiApiKey();
     if (!apiKey) {
         document.getElementById('ai-api-key-section').classList.remove('hidden');
@@ -2880,19 +2914,22 @@ async function handleAiAnalyze() {
 
     try {
         const rawText = await analyzePhoto(apiKey, aiCurrentImageBase64, aiCurrentMimeType);
+        if (generation !== photoGeneration) return;
         aiLastRawResponse = rawText;
         const parsed = parseResponse(rawText);
         aiCurrentParsed = parsed;
         renderAiResults(parsed);
     } catch (err) {
+        if (generation !== photoGeneration) return;
         showAiError(err.message);
         document.getElementById('ai-analyze-btn').classList.remove('hidden');
     } finally {
-        document.getElementById('ai-loading').classList.add('hidden');
+        if (generation === photoGeneration) document.getElementById('ai-loading').classList.add('hidden');
     }
 }
 
 async function handleAiRefine() {
+    const generation = photoGeneration;
     const apiKey = getGeminiApiKey();
     const answer = document.getElementById('ai-user-answer').value.trim();
     if (!answer) {
@@ -2912,16 +2949,19 @@ async function handleAiRefine() {
             aiLastRawResponse,
             answer
         );
+        if (generation !== photoGeneration) return;
         aiLastRawResponse = rawText;
         const parsed = parseResponse(rawText);
         aiCurrentParsed = parsed;
         renderAiResults(parsed);
         document.getElementById('ai-user-answer').value = '';
     } catch (err) {
-        showAiError(err.message);
+        if (generation === photoGeneration) showAiError(err.message);
     } finally {
+        if (generation === photoGeneration) {
         document.getElementById('ai-refine-btn').disabled = false;
         document.getElementById('ai-refine-btn').innerHTML = '<i class="fas fa-sync mr-2"></i>Aggiorna stima';
+        }
     }
 }
 
@@ -3008,4 +3048,147 @@ function handleAiResetKey() {
     saveGeminiApiKey('');
     closeAiPhotoModal();
     openAiPhotoModal();
+}
+
+function editSavedEstimate() {
+    const meal = editedMealEstimate || allMeals.find(item => item.id === mealToEditId);
+    if (!meal?.estimate) return;
+    const owner = userId, mealId = mealToEditId;
+    let quantity;
+    try { quantity = editPortion(meal, document.getElementById('edit-meal-quantity').value, document.getElementById('edit-meal-unit').value === 'original').quantity; }
+    catch (error) { return showToast(error.message, true); }
+    estimateEditor.open(meal, quantity, food => {
+        if (owner !== userId || mealId !== mealToEditId) return;
+        // Keep this as a draft until the parent edit form is explicitly saved.
+        editedMealEstimate = food;
+        const select = document.getElementById('edit-meal-unit');
+        select.innerHTML = '<option value="original">Pasto stimato</option><option value="g">Grammi</option>';
+        select.value = 'original'; select.dataset.previous = 'original';
+        document.getElementById('edit-meal-quantity').value = 1;
+        updateEditPortionHint();
+    });
+}
+function changeEditUnit() {
+    const meal = editedMealEstimate || allMeals.find(item => item.id === mealToEditId);
+    if (!meal) return;
+    const select = document.getElementById('edit-meal-unit');
+    const amount = document.getElementById('edit-meal-quantity');
+    if (positive(amount.value)) {
+        const old = editPortion(meal, amount.value, select.dataset.previous === 'original');
+        amount.value = old.quantity / (select.value === 'original' ? meal.portion.gramsPerUnit : 1);
+    }
+    select.dataset.previous = select.value;
+    updateEditPortionHint();
+}
+function updateEditPortionHint() {
+    const meal = editedMealEstimate || allMeals.find(item => item.id === mealToEditId);
+    if (!meal) return;
+    try {
+        const edited = editPortion(meal, document.getElementById('edit-meal-quantity').value, document.getElementById('edit-meal-unit').value === 'original');
+        document.getElementById('edit-portion-hint').textContent = `${portionDescription(edited.portion)}${meal.estimate ? ` · ${estimateRange(meal, edited.quantity)}` : ''}`;
+    } catch { document.getElementById('edit-portion-hint').textContent = 'Inserisci una quantità maggiore di zero.'; }
+}
+function listenToHabitualMeals() {
+    habitualUnsubscribe?.();
+    const owner = userId;
+    habitualUnsubscribe = onSnapshot(collection(db, `users/${owner}/habitualMeals`), { includeMetadataChanges: true }, snapshot => {
+        if (owner !== userId) return;
+        habitsPending = snapshot.metadata.hasPendingWrites; renderSyncStatus();
+        habitualMeals = snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() }));
+        renderHabitualMeals();
+    }, () => showToast('Impossibile caricare i pasti abituali.', true));
+}
+function renderHabitualMeals() {
+    document.getElementById('habitual-meals').innerHTML = habitualMeals.length ? habitualMeals.map(group => `
+        <div class="habitual-item"><div><strong>${escapeText(group.name)}</strong><p class="muted">${group.items.length} alimenti · ${escapeText(group.type)}</p></div>
+        <button class="text-button" data-habit-use="${escapeText(group.id)}">Usa</button><button class="text-button" data-habit-delete="${escapeText(group.id)}" aria-label="Elimina ${escapeText(group.name)}">Elimina</button></div>
+    `).join('') : '<p class="muted mt-3">Non hai ancora salvato un pasto abituale.</p>';
+}
+async function handleGroupAction(event) {
+    const action = event.target.closest('[data-group-action]');
+    if (!action || action.disabled) return;
+    const type = action.closest('.meal-category').dataset.categoryName;
+    if (action.dataset.groupAction === 'add') {
+        resetAddMealForm(true, type); return;
+    }
+    const owner = userId;
+    const targetDate = new Date(selectedDate);
+    let meals = allMeals.filter(meal => dayKey(meal.jsDate) === dayKey(targetDate) && meal.type === type);
+    if (action.dataset.groupAction === 'repeat') {
+        const yesterday = new Date(targetDate); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+        action.disabled = true;
+        try {
+            const { start, end } = getDayBounds(yesterday);
+            const result = await getDocs(query(collection(db, `users/${owner}/meals`), where('date', '>=', Timestamp.fromDate(start)), where('date', '<=', Timestamp.fromDate(end))));
+            if (userId !== owner || dayKey(selectedDate) !== dayKey(targetDate)) return;
+            meals = result.docs.map(entry => entry.data()).filter(meal => meal.type === type);
+            if (!meals.length && result.metadata.fromCache) return showToast('Nessun pasto di ieri disponibile sul dispositivo. Riprova con la rete.', true);
+        } catch { showToast('Impossibile caricare i pasti di ieri. Riprova.', true); return; }
+        finally { action.disabled = false; }
+    }
+    if (!meals.length) return showToast('Non ci sono alimenti da riutilizzare in questo pasto.');
+    openMealGroup(meals, type, action.dataset.groupAction === 'save', targetDate, '', action);
+}
+function handleHabitualAction(event) {
+    const use = event.target.closest('[data-habit-use]');
+    const remove = event.target.closest('[data-habit-delete]');
+    const group = habitualMeals.find(item => item.id === (use?.dataset.habitUse || remove?.dataset.habitDelete));
+    if (!group) return;
+    if (use) openMealGroup(group.items, group.type, false, new Date(selectedDate), group.name, use);
+    const owner = userId;
+    if (remove) showConfirmationModal(`Eliminare “${group.name}” dai pasti abituali?`, () => {
+        if (owner !== userId) return;
+        const ref = doc(db, `users/${owner}/habitualMeals`, group.id);
+        queueWrite(() => deleteDoc(ref), 'Eliminazione del pasto abituale');
+    });
+}
+function openMealGroup(meals, type, save, date, name = '', trigger = null) {
+    groupDraft = { items: meals.map(mealTemplate), type, save, date, owner: userId, trigger };
+    document.getElementById('meal-group-title').textContent = save ? 'Salva un pasto abituale' : name || 'Ripeti il pasto';
+    document.getElementById('meal-group-context').textContent = save ? 'Scegli gli alimenti e le quantità da ricordare.' : `Aggiungi a ${formatDate(date)}. Puoi cambiare le quantità.`;
+    document.getElementById('meal-group-name-field').classList.toggle('hidden', !save);
+    document.getElementById('meal-group-name').value = name;
+    document.getElementById('meal-group-type').value = type;
+    document.getElementById('meal-group-error').textContent = '';
+    document.getElementById('save-meal-group').textContent = save ? 'Salva abituale' : 'Aggiungi al diario';
+    document.getElementById('meal-group-items').innerHTML = groupDraft.items.map((item, index) => `
+        <div class="group-item"><label><input type="checkbox" data-group-index="${index}" checked/> ${escapeText(item.name)}</label>
+        <label class="muted">${escapeText(item.portion?.label || 'Grammi')}<input class="input-modern" aria-label="Quantità di ${escapeText(item.name)}" data-group-amount="${index}" type="number" min="0.01" step="any" value="${item.quantity / (positive(item.portion?.gramsPerUnit) ? item.portion.gramsPerUnit : 1)}"/></label></div>
+    `).join('');
+    const modal = document.getElementById('meal-group-modal'); modal.classList.remove('hidden'); modal.classList.add('flex');
+    (save ? document.getElementById('meal-group-name') : document.getElementById('meal-group-type')).focus();
+}
+function closeMealGroup() {
+    const trigger = groupDraft?.trigger;
+    groupDraft = null;
+    document.getElementById('meal-group-modal').classList.add('hidden');
+    trigger?.focus();
+}
+function saveMealGroup() {
+    if (!groupDraft || groupDraft.owner !== userId) return;
+    try {
+        const draft = groupDraft;
+        const items = draft.items.flatMap((item, index) => {
+            if (!document.querySelector(`[data-group-index="${index}"]`).checked) return [];
+            return [{ ...item, ...editPortion(item, document.querySelector(`[data-group-amount="${index}"]`).value) }];
+        });
+        if (!items.length) throw new Error('Seleziona almeno un alimento.');
+        const type = document.getElementById('meal-group-type').value;
+        if (draft.save) {
+            const name = document.getElementById('meal-group-name').value.trim();
+            if (!name) throw new Error('Dai un nome al pasto abituale.');
+            const ref = doc(collection(db, `users/${draft.owner}/habitualMeals`));
+            queueWrite(() => setDoc(ref, { name, type, items }), 'Salvataggio del pasto abituale');
+        } else {
+            const entries = items.map((item, i) => ({ ref: doc(collection(db, `users/${draft.owner}/meals`)), data: { ...item, type, date: Timestamp.fromDate(getMealTimestamp(type, draft.date)), sortIndex: Date.now() + i } }));
+            queueWrite(() => {
+                const batch = writeBatch(db);
+                entries.forEach(entry => batch.set(entry.ref, entry.data));
+                return batch.commit();
+            }, 'Aggiunta del pasto completo');
+        }
+        closeMealGroup();
+        if (!draft.save) mealEntry.close();
+        showToast(draft.save ? 'Pasto abituale salvato.' : 'Pasto aggiunto al diario.');
+    } catch (error) { document.getElementById('meal-group-error').textContent = error.message; }
 }
