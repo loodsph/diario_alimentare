@@ -9,6 +9,23 @@ let availableCameras = [];
 let currentCameraIndex = 0;
 
 const LIBRARY_URL = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+const CAMERA_STORAGE = 'nutritrack-scanner-camera';
+let scanHandled = false;
+
+function savedCameraIndex(cameras) {
+    try {
+        const savedId = localStorage.getItem(CAMERA_STORAGE);
+        return cameras.findIndex(camera => camera.id === savedId);
+    } catch {
+        return -1;
+    }
+}
+
+function saveCamera(camera) {
+    try {
+        localStorage.setItem(CAMERA_STORAGE, camera.id);
+    } catch { /* La scelta vale solo per questa sessione */ }
+}
 
 // Sceglie la fotocamera posteriore principale: le grandangolari, i teleobiettivi
 // e le frontali non mettono a fuoco da vicino e non leggono i codici a barre.
@@ -66,7 +83,8 @@ export async function startScanner(onDecode) {
             if (!cameras || cameras.length === 0) {
                 throw new Error("Nessuna fotocamera trovata.");
             }
-            setScannerState(onDecode, html5QrCode, cameras, pickDefaultCamera(cameras));
+            const saved = savedCameraIndex(cameras);
+            setScannerState(onDecode, html5QrCode, cameras, saved !== -1 ? saved : pickDefaultCamera(cameras));
         }
 
         // Popola il dropdown delle fotocamere
@@ -121,7 +139,11 @@ export async function startScanningWithCurrentCamera() {
         }
     };
 
+    scanHandled = false;
     const onScanSuccess = async (decodedText, decodedResult) => {
+        // La libreria continua a chiamare questa funzione a ogni fotogramma finché non viene fermata.
+        if (scanHandled) return;
+        scanHandled = true;
         // Chiama la funzione centralizzata per il feedback
         await triggerSuccessFeedback();
         await stopScanner();
@@ -180,6 +202,7 @@ export async function handleCameraChange(event) {
     const newCameraIndex = event.target.selectedIndex;
     setScannerState(onDecodeCallback, html5QrCode, availableCameras, newCameraIndex);
     if (newCameraIndex !== -1) {
+        saveCamera(availableCameras[newCameraIndex]);
         await startScanningWithCurrentCamera();
         showToast(`Fotocamera cambiata: ${availableCameras[newCameraIndex].label || `Fotocamera ${newCameraIndex + 1}`}`);
     }
@@ -235,11 +258,16 @@ export function playScanSuccessAnimation(elementId) {
         const element = document.getElementById(elementId);
         if (!element) return resolve();
 
+        let done = false;
         const onAnimationEnd = () => {
+            if (done) return;
+            done = true;
             element.classList.remove('flash-scan-success');
             resolve();
         };
         element.addEventListener('animationend', onAnimationEnd, { once: true });
+        // Se l'animazione non parte (CSS mancante, movimento ridotto) non bloccare la scansione.
+        setTimeout(onAnimationEnd, 700);
         element.classList.add('flash-scan-success');
     });
 }
