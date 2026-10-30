@@ -8,6 +8,35 @@ let html5QrCode = null;
 let availableCameras = [];
 let currentCameraIndex = 0;
 
+const LIBRARY_URL = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+
+// Sceglie la fotocamera posteriore principale: le grandangolari, i teleobiettivi
+// e le frontali non mettono a fuoco da vicino e non leggono i codici a barre.
+export function pickDefaultCamera(cameras) {
+    const labels = cameras.map(camera => (camera.label || '').toLowerCase());
+    const isBack = label => /back|rear|environment|posterior/.test(label);
+    const isSpecial = label => /ultra|wide|tele|dual|triple|front|anterior|user/.test(label);
+    const index = labels.findIndex(label => isBack(label) && !isSpecial(label.replace(/back|rear/g, '')));
+    if (index !== -1) return index;
+    const anyBack = labels.findIndex(isBack);
+    if (anyBack !== -1) return anyBack;
+    return cameras.length - 1;
+}
+
+function createScanner() {
+    return new window.Html5Qrcode("scanner-reader", {
+        formatsToSupport: [
+            window.Html5QrcodeSupportedFormats.EAN_13,
+            window.Html5QrcodeSupportedFormats.EAN_8,
+            window.Html5QrcodeSupportedFormats.UPC_A,
+            window.Html5QrcodeSupportedFormats.UPC_E
+        ],
+        // Usa il lettore nativo del browser (Chrome Android) quando c'è: è molto più affidabile.
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        verbose: false
+    });
+}
+
 function setScannerState(callback, qrCode, cameras, index) {
     onDecodeCallback = callback;
     html5QrCode = qrCode;
@@ -27,7 +56,7 @@ export async function startScanner(onDecode) {
     feedbackEl.textContent = 'Avvio fotocamera...';
 
     try {
-        await loadScript('https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js');
+        await loadScript(LIBRARY_URL);
         if (scannerModal.classList.contains('hidden')) return;
         // Ottieni la lista delle fotocamere solo se non è già stata caricata.
         // Questo preserva la selezione dell'utente nelle aperture successive.
@@ -37,9 +66,7 @@ export async function startScanner(onDecode) {
             if (!cameras || cameras.length === 0) {
                 throw new Error("Nessuna fotocamera trovata.");
             }
-            // Imposta la seconda fotocamera (indice 4) come predefinita, se esiste.
-            const newCameraIndex = cameras.length > 3 ? 3 : 0;
-            setScannerState(onDecode, html5QrCode, cameras, newCameraIndex);
+            setScannerState(onDecode, html5QrCode, cameras, pickDefaultCamera(cameras));
         }
 
         // Popola il dropdown delle fotocamere
@@ -54,15 +81,7 @@ export async function startScanner(onDecode) {
 
         // Crea l'istanza dello scanner se non esiste
         if (!html5QrCode) {
-            const newScanner = new window.Html5Qrcode("scanner-reader", {
-                formatsToSupport: [
-                    window.Html5QrcodeSupportedFormats.EAN_13,
-                    window.Html5QrcodeSupportedFormats.EAN_8,
-                    window.Html5QrcodeSupportedFormats.UPC_A,
-                    window.Html5QrcodeSupportedFormats.UPC_E
-                ]
-            });
-            setScannerState(onDecodeCallback, newScanner, availableCameras, currentCameraIndex);
+            setScannerState(onDecodeCallback, createScanner(), availableCameras, currentCameraIndex);
         }
 
         // Avvia la scansione con la fotocamera selezionata
@@ -88,7 +107,18 @@ export async function startScanningWithCurrentCamera() {
 
     const config = {
         fps: 10,
-        qrbox: { width: 250, height: 150 }
+        // Area larga e bassa, proporzionata al riquadro: i codici EAN sono orizzontali.
+        qrbox: (width, height) => ({
+            width: Math.max(50, Math.floor(width * 0.85)),
+            height: Math.max(50, Math.floor(Math.min(height * 0.5, width * 0.45)))
+        }),
+        // Risoluzione alta e messa a fuoco continua: le barre sottili richiedono dettaglio.
+        videoConstraints: {
+            deviceId: { exact: availableCameras[currentCameraIndex].id },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [{ focusMode: 'continuous' }]
+        }
     };
 
     const onScanSuccess = async (decodedText, decodedResult) => {
@@ -162,12 +192,13 @@ export async function handleFileSelect(event) {
     showToast('Elaborazione immagine...');
 
     let scanner = html5QrCode;
-    if (!scanner) {
-        scanner = new window.Html5Qrcode("scanner-reader");
-        setScannerState(onDecodeCallback, scanner, availableCameras, currentCameraIndex);
-    }
-
     try {
+        await loadScript(LIBRARY_URL);
+        if (!scanner) {
+            scanner = createScanner();
+            setScannerState(onDecodeCallback, scanner, availableCameras, currentCameraIndex);
+        }
+        if (scanner.isScanning) await scanner.stop();
         const decodedText = await scanner.scanFile(file, false);
         // Chiama la funzione centralizzata per il feedback
         await triggerSuccessFeedback();
