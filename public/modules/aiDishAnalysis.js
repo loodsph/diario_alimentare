@@ -95,6 +95,26 @@ export async function analyzeDish(apiKey, input, { signal } = {}) {
     if (candidate?.finishReason !== 'STOP') throw new Error('Gemini non ha completato la stima. Controlla la descrizione e riprova.');
     return parseDishResponse(candidate.content?.parts?.filter(part => !part.thought).map(part => part.text || '').join('') || '');
 }
+// Gemini a volte resta bloccato su una singola richiesta: un nuovo tentativo risponde prima che continuare ad aspettare.
+export async function analyzeDishWithRetry(apiKey, input, { signal, timeoutMs = 45000, attempts = 2, onRetry } = {}) {
+    for (let attempt = 1; ; attempt++) {
+        const request = new AbortController();
+        let timedOut = false;
+        const timer = setTimeout(() => { timedOut = true; request.abort(); }, timeoutMs);
+        const cancel = () => request.abort();
+        signal?.addEventListener('abort', cancel, { once: true });
+        try {
+            return await analyzeDish(apiKey, input, { signal: request.signal });
+        } catch (error) {
+            if (!timedOut) throw error;
+            if (attempt >= attempts) throw new Error('Gemini non ha risposto in tempo, nemmeno al secondo tentativo. Probabilmente è sovraccarico: riprova tra qualche minuto.');
+            onRetry?.();
+        } finally {
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', cancel);
+        }
+    }
+}
 export function dishToFood(result, input, values = result.values, name = result.name) {
     if (!text(name, 200)) throw new Error('Inserisci un nome per la stima.');
     return {

@@ -1,4 +1,4 @@
-import { dishOptions, analyzeDish, normalizeDishInput, dishToFood } from './aiDishAnalysis.js';
+import { dishOptions, analyzeDishWithRetry, normalizeDishInput, dishToFood } from './aiDishAnalysis.js';
 import { getGeminiApiKey, saveGeminiApiKey } from './aiPhotoAnalysis.js';
 
 const options = key => dishOptions[key].map(value => `<option>${value}</option>`).join('');
@@ -146,9 +146,11 @@ export function createDishEstimateEditor(root, onSelect) {
             controller = request;
             busy(true);
             get('dish-status').textContent = 'Gemini sta stimando ricetta, resa e valori nutrizionali…';
-            const timeout = setTimeout(() => request.abort(), 60000);
             try {
-                const response = await analyzeDish(apiKey, submitted, { signal: request.signal });
+                const response = await analyzeDishWithRetry(apiKey, submitted, {
+                    signal: request.signal,
+                    onRetry: () => { if (controller === request) get('dish-status').textContent = 'Gemini è lento a rispondere. Secondo tentativo in corso…'; }
+                });
                 if (controller !== request || request.signal.aborted) return;
                 result = response;
                 resultForm.elements.namedItem('resultName').value = result.name;
@@ -162,9 +164,8 @@ export function createDishEstimateEditor(root, onSelect) {
             } catch (error) {
                 if (controller !== request) return;
                 get('dish-status').textContent = '';
-                get('dish-error').textContent = error.name === 'AbortError' ? 'La richiesta ha impiegato troppo tempo. Riprova.' : error instanceof TypeError ? 'Connessione non disponibile. Controlla la rete e riprova.' : error.message;
+                get('dish-error').textContent = error instanceof TypeError ? 'Connessione non disponibile. Controlla la rete e riprova.' : error.message;
             } finally {
-                clearTimeout(timeout);
                 if (controller === request) { controller = null; busy(false); }
             }
         } catch (error) { get('dish-error').textContent = error.message; }

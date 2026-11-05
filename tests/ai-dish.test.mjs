@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeDishInput, buildDishPrompt, parseDishResponse, analyzeDish, dishToFood } from '../public/modules/aiDishAnalysis.js';
+import { normalizeDishInput, buildDishPrompt, parseDishResponse, analyzeDish, analyzeDishWithRetry, dishToFood } from '../public/modules/aiDishAnalysis.js';
 import { mealTemplate } from '../public/modules/diary.js';
 import { estimateLabel } from '../public/modules/mealEstimate.js';
 
@@ -79,4 +79,37 @@ test('quota, unavailable model and incomplete generation produce actionable erro
     fetch.mock.mockImplementation(async () => ({ ok: true, json: async () => ({ candidates: [{ finishReason: 'MAX_TOKENS' }] }) }));
     await assert.rejects(analyzeDish('test-key', input), /non ha completato/);
     await assert.rejects(analyzeDish('', input), /chiave/);
+});
+
+const hangUntilAborted = (_url, { signal }) => new Promise((_, reject) => {
+    signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+});
+const successResponse = { ok: true, json: async () => ({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(result) }] } }] }) };
+
+test('a stalled request is retried once and the second answer is used', async t => {
+    const fetch = t.mock.method(globalThis, 'fetch', hangUntilAborted);
+    fetch.mock.mockImplementationOnce(hangUntilAborted, 0);
+    fetch.mock.mockImplementationOnce(async () => successResponse, 1);
+    let retries = 0;
+    assert.deepEqual(await analyzeDishWithRetry('test-key', input, { timeoutMs: 5, onRetry: () => { retries++; } }), result);
+    assert.equal(fetch.mock.callCount(), 2);
+    assert.equal(retries, 1);
+});
+test('after every attempt stalls the error explains the service is slow', async t => {
+    const fetch = t.mock.method(globalThis, 'fetch', hangUntilAborted);
+    await assert.rejects(analyzeDishWithRetry('test-key', input, { timeoutMs: 5 }), /non ha risposto in tempo/);
+    assert.equal(fetch.mock.callCount(), 2);
+});
+test('closing the dialog cancels without retrying', async t => {
+    const fetch = t.mock.method(globalThis, 'fetch', hangUntilAborted);
+    const controller = new AbortController();
+    const pending = analyzeDishWithRetry('test-key', input, { signal: controller.signal, timeoutMs: 10000 });
+    controller.abort();
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(fetch.mock.callCount(), 1);
+});
+test('quota errors are not retried', async t => {
+    const fetch = t.mock.method(globalThis, 'fetch', async () => ({ ok: false, status: 429 }));
+    await assert.rejects(analyzeDishWithRetry('test-key', input, { timeoutMs: 1000 }), /Quota/);
+    assert.equal(fetch.mock.callCount(), 1);
 });
