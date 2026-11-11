@@ -242,6 +242,14 @@ h2, h3 { font-weight: 600; }
 /* Guided estimates use the same portion model as weighed diary entries. */
 .estimate-entry { width: 100%; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 10px; text-align: left; }
 .estimate-entry span { font-weight: 400; }
+.day-preset-action { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.day-preset-banner { padding: 18px; margin: 18px 0; border: 1px solid var(--line); border-radius: 16px; background: var(--soft); }
+.day-preset-banner p { margin: 8px 0; font-size: 13px; line-height: 1.6; }
+.day-preset-banner .text-button + .text-button { margin-left: 16px; }
+.day-preset-dialog form { display: grid; gap: 18px; }
+.day-preset-dialog .day-preset-remember { display: flex; align-items: flex-start; gap: 8px; }
+.day-preset-dialog .day-preset-remember input { width: auto; margin-top: 2px; }
+#day-preset-error { color: var(--danger, #c44); }
 .estimate-dialog { width: min(660px, calc(100% - 24px)); padding: 24px; margin: auto; color: var(--ink); }
 .estimate-dialog::backdrop { background: #0008; }
 .estimate-heading, .estimate-row-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -288,6 +296,13 @@ h2, h3 { font-weight: 600; }
 #dish-submit, #dish-result-form > button { width: 100%; margin-top: 16px; }
 #dish-status, #dish-error, #dish-result-error { margin-top: 12px; font-size: 13px; }
 #dish-error, #dish-result-error { color: var(--danger); }
+.ai-api-options { margin: 12px 0; font-size: 13px; color: var(--muted); }
+.ai-api-options summary { cursor: pointer; }
+.gemini-open { margin: 16px 0; font-size: 14px; color: var(--accent); }
+.gemini-import-dialog form > button { width: 100%; margin-top: 16px; }
+.gemini-import-dialog form > label, #gemini-import-notes { margin: 14px 0; }
+#gemini-import-text, #gemini-instructions { font-family: ui-monospace, monospace; font-size: 13px; }
+#gemini-import-error, #gemini-result-error { color: var(--danger); font-size: 13px; margin-top: 12px; }
 .dish-assumptions { margin: 18px 0; padding: 16px; background: var(--soft); border-radius: 12px; overflow-wrap: anywhere; }
 .dish-assumptions h4 { font-size: 14px; font-weight: 600; }
 .dish-assumptions ul { list-style: disc; padding-left: 20px; margin: 8px 0; font-size: 13px; line-height: 1.7; }

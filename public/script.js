@@ -2,7 +2,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, onSnapshot, query, where, Timestamp, doc, deleteDoc, orderBy, getDocs, setDoc, getDoc, limit, runTransaction, documentId, writeBatch, updateDoc, waitForPendingWrites } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { dayKey, weekDates, editPortion, mealTemplate } from './modules/diary.js?v=20261028';
+import { dayKey, weekDates, editPortion, mealTemplate } from './modules/diary.js?v=20261111';
+import { isDayPreset, findDayPreset, dayNutrition, rememberDayPreset } from './modules/dayPreset.js';
+import { createDayPresetEditor } from './modules/dayPresetEditor.js';
 import { createWriteTracker } from './modules/sync.js';
 import { loadScript } from './modules/lazy.js';
 import { preparePhoto } from './modules/photo.js';
@@ -12,12 +14,13 @@ import { initCharts, updateCharts, destroyCharts } from './modules/charts.js';
 import { firebaseConfig } from './firebase-config.js';
 import { startScanner, stopScanner, handleCameraChange, toggleFlash, handleFileSelect } from './modules/scanner.js';
 import { getGeminiApiKey, saveGeminiApiKey, analyzePhoto, refineWithAnswer, parseResponse } from './modules/aiPhotoAnalysis.js';
-import { estimateLabel, estimateRange, estimateBreakdown } from './modules/mealEstimate.js?v=20261028';
+import { estimateLabel, estimateRange, estimateBreakdown } from './modules/mealEstimate.js?v=20261111';
 import { createEstimateEditor } from './modules/estimateEditor.js';
 import { createDishEstimateEditor } from './modules/dishEstimateEditor.js';
+import { createGeminiImportEditor } from './modules/geminiImportEditor.js';
 import { createMealEntry } from './modules/mealEntry.js';
-import { createPortionPicker } from './modules/portionPicker.js?v=20261028';
-import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js?v=20261025';
+import { createPortionPicker } from './modules/portionPicker.js?v=20261111';
+import { positive, formatAmount, nutritionPer100g, foodKey, productPortions, portionDescription, readPortionHistory, rememberPortion } from './modules/portions.js?v=20261111';
 import { emptyTotals, addTotals, mealNutrition, computeRecipeNutrition, findMissingIngredients, groupNutrientDetails, MAX_RECIPE_INGREDIENTS } from './modules/nutrition.js';
 import { searchTokens, normalizeQuery, queryToken, sortResults, matchesSearch, buildUsageStats } from './modules/foodSearch.js';
 
@@ -116,6 +119,8 @@ let mealToEditId = null;
 let editedMealEstimate = null;
 let estimateEditor = null;
 let dishEstimateEditor = null;
+let geminiImportEditor = null;
+let dayPresetEditor = null;
 let foodToEditId = null;
 let recipeToEditId = null;
 let onConfirmAction = null;
@@ -293,7 +298,16 @@ function setupListeners() {
     portionPicker = createPortionPicker(document, updateMealPreview);
     estimateEditor = createEstimateEditor(document, food => selectMealFood(food, food));
     dishEstimateEditor = createDishEstimateEditor(document, food => selectMealFood(food));
+    geminiImportEditor = createGeminiImportEditor(document, food => selectMealFood(food, food));
+    dayPresetEditor = createDayPresetEditor(document, saveDayPreset);
+    document.getElementById('day-preset-btn').addEventListener('click', openDayPreset);
+    document.getElementById('edit-day-preset').addEventListener('click', openDayPreset);
+    document.getElementById('remove-day-preset').addEventListener('click', () => {
+        const meal = findDayPreset(allMeals.filter(meal => dayKey(meal.jsDate) === dayKey(selectedDate)));
+        if (meal) deleteMeal(meal.id);
+    });
     document.getElementById('describe-dish-btn').addEventListener('click', () => dishEstimateEditor.open());
+    document.getElementById('gemini-import-btn').addEventListener('click', () => geminiImportEditor.open());
     document.getElementById('estimate-meal-btn').addEventListener('click', () => estimateEditor.open());
     document.getElementById('edit-estimate-btn').addEventListener('click', () => estimateEditor.open(selectedFood, portionPicker.quantity()));
     document.getElementById('edit-saved-estimate-btn').addEventListener('click', editSavedEstimate);
@@ -413,7 +427,7 @@ function setupListeners() {
                 <i class="fas fa-utensils text-indigo-400 mr-3"></i>
                 <div>
                     <div class="font-medium text-slate-200">${escapeText(item.name)}</div>
-                    <div class="text-sm text-slate-400">${item.calories} cal/100g</div>
+                    <div class="text-sm text-slate-400">${item.calories} ${item.importedEstimate ? 'kcal/porzione descritta' : 'cal/100g'}</div>
                 </div>
             </div>`;
         }
@@ -766,9 +780,22 @@ function recalculateDay(key) {
     delete dailyMealsCache[key];
     const meals = allMeals.filter(meal => dayKey(meal.jsDate) === key);
     if (!meals.length) { delete dailyTotalsCache[key]; return; }
-    const totals = emptyTotals();
-    meals.forEach(meal => addTotals(totals, mealNutrition(meal)));
-    dailyTotalsCache[key] = totals;
+    dailyTotalsCache[key] = dayNutrition(meals);
+}
+function openDayPreset() {
+    if (!userId) return;
+    const meal = findDayPreset(allMeals.filter(meal => dayKey(meal.jsDate) === dayKey(selectedDate)));
+    dayPresetEditor.open({ owner: userId, date: selectedDate, meal, storage: localStorage });
+}
+function saveDayPreset(meal, draft) {
+    if (!userId || draft.owner !== userId) throw new Error('Accedi di nuovo per salvare la giornata.');
+    // One document per date, including offline and repeated submissions.
+    const ref = doc(db, `users/${draft.owner}/meals`, draft.id || `day-preset-${dayKey(draft.date)}`);
+    const data = { ...meal, date: Timestamp.fromDate(draft.date), sortIndex: 0 };
+    queueWrite(() => setDoc(ref, data), 'Salvataggio del giorno sgarro', () => {
+        if (draft.remember) rememberDayPreset(localStorage, draft.owner, mealNutrition(meal));
+    }, ref.path);
+    showToast('Stima della giornata registrata.');
 }
 function renderHistoryStatus() {
     const state = dayLoadStates[dayKey(selectedDate)];
@@ -917,6 +944,7 @@ async function addMeal(keepOpen = false) {
             estimated: Boolean(foodSnapshot?.estimated),
             estimate: foodSnapshot?.estimate || null,
             aiEstimate: foodSnapshot?.aiEstimate || null,
+            importedEstimate: foodSnapshot?.importedEstimate || null,
             isCustom: mealData.isCustom
         };
 
@@ -1083,6 +1111,7 @@ async function addToFavorites() {
             estimated: Boolean(selectedFood.estimated),
             estimate: selectedFood.estimate || null,
             aiEstimate: selectedFood.aiEstimate || null,
+            importedEstimate: selectedFood.importedEstimate || null,
             createdAt: existingFavorite?.createdAt || Timestamp.now()
         };
 
@@ -1553,6 +1582,10 @@ function updateDateDisplay() {
 function renderSelectedDayMeals() {
     const mainContainer = document.getElementById('selected-day-meals');
     const dateKey = selectedDate.toISOString().split('T')[0];
+    const preset = findDayPreset(allMeals.filter(meal => dayKey(meal.jsDate) === dateKey));
+    document.getElementById('day-preset-banner').classList.toggle('hidden', !preset);
+    document.getElementById('day-preset-btn').textContent = preset ? 'Modifica giorno sgarro' : 'Giorno sgarro';
+    document.getElementById('nutrition-summary-title').textContent = preset ? 'La giornata, stimata' : 'La giornata, finora';
     let mealsByCategory;
     
     // Controlla se i dati per questo giorno sono già in cache per evitare ricalcoli
@@ -1621,6 +1654,7 @@ function renderSelectedDayMeals() {
                         <p class="text-sm text-slate-300 mt-1">${escapeText(portionDescription(meal.portion) || `${formatAmount(meal.quantity || 0)} g`)}${meal.estimated ? ` · ${estimateLabel(meal)}` : ''}</p>
                         ${meal.estimate ? `<details class="meal-estimate-detail"><summary>${escapeText(estimateRange(meal))}</summary><p>${escapeText(estimateBreakdown(meal))}</p><p>Quantità e valori approssimativi. Nel totale è usata la stima centrale; l’intervallo è convenzionale.</p></details>` : ''}
                         ${meal.aiEstimate ? `<details class="meal-estimate-detail"><summary>Ipotesi della stima da descrizione</summary><p>${escapeText((meal.aiEstimate.assumptions || []).join(' '))}</p><p>${escapeText(meal.aiEstimate.notes || '')}</p>${meal.aiEstimate.edited ? '<p>Valori o nome corretti manualmente prima dell’inserimento.</p>' : ''}</details>` : ''}
+                        ${meal.importedEstimate ? `<details class="meal-estimate-detail"><summary>Stima importata da Gemini</summary><p>I valori si riferiscono alla porzione descritta, senza un peso in grammi.</p><p>${escapeText(meal.importedEstimate.notes || '')}</p>${!meal.importedEstimate.fibersKnown ? '<p>Fibre non disponibili: non contribuiscono al totale.</p>' : ''}${meal.importedEstimate.edited ? '<p>Valori o nome modificati prima dell’inserimento.</p>' : ''}</details>` : ''}
                         <p class="text-xs md:text-sm text-slate-400 mt-1 meal-nutrition-details">
                             ${calculated.calories.toFixed(0)} kcal · P ${calculated.proteins.toFixed(1)} · C ${calculated.carbs.toFixed(1)} · G ${calculated.fats.toFixed(1)}
                         </p>
@@ -1750,7 +1784,8 @@ function renderWeeklyHistory() {
         if (!dailyTotalsCache[dateKey]) {
             [...row.children].slice(1, 6).forEach(cell => cell.textContent = '—');
         }
-        row.lastElementChild.textContent = `${allMeals.filter(meal => dayKey(meal.jsDate) === dateKey).length} alimenti`;
+        const historyMeals = allMeals.filter(meal => dayKey(meal.jsDate) === dateKey);
+        row.lastElementChild.textContent = findDayPreset(historyMeals) ? 'Giorno sgarro · stima' : `${historyMeals.length} alimenti`;
         row.tabIndex = 0;
         row.setAttribute('aria-label', `Apri ${formatDate(date)}`);
         const openDay = () => { selectedDate = new Date(date); mealEntry.close(); handleDayChange(); };
@@ -1812,6 +1847,10 @@ function updateNutritionProgress() {
 }
 
 function updateMealDistributionBar(dayMeals) {
+    const estimatedDay = Boolean(findDayPreset(dayMeals));
+    document.getElementById('meal-distribution-content').classList.toggle('hidden', estimatedDay);
+    document.getElementById('meal-distribution-note').classList.toggle('hidden', !estimatedDay);
+    if (estimatedDay) return;
     const mealTypes = {
         '🌅 Colazione': { bar: 'meal-dist-colazione', perc: 'meal-dist-colazione-perc', calories: 0 },
         '🍽️ Pranzo': { bar: 'meal-dist-pranzo', perc: 'meal-dist-pranzo-perc', calories: 0 },
@@ -2032,6 +2071,8 @@ function handleDateChange(e) {
 function resetAppData() {
     estimateEditor?.close();
     dishEstimateEditor?.reset();
+    geminiImportEditor?.reset();
+    dayPresetEditor?.close();
     editedMealEstimate = null;
     writeTracker.reset();
     snapshotPending = false; waterPending = false; habitsPending = false; restoredWritesPending = false;
@@ -2182,6 +2223,10 @@ function openEditMealModal(mealId) {
         showToast("Pasto non trovato. Potrebbe essere stato eliminato.", true);
         return;
     }
+    if (isDayPreset(meal)) {
+        dayPresetEditor.open({ owner: userId, date: meal.jsDate, meal, storage: localStorage });
+        return;
+    }
 
     mealToEditId = mealId;
     editedMealEstimate = null;
@@ -2209,7 +2254,7 @@ function openEditMealModal(mealId) {
 
     const unitSelect = document.getElementById('edit-meal-unit');
     const original = meal.portion && positive(meal.portion.gramsPerUnit);
-    unitSelect.innerHTML = `${original ? `<option value="original">${escapeText(meal.portion.label || 'Misura originale')}</option>` : ''}<option value="g">Grammi${meal.portion?.ingredientWeight ? ' di ingredienti' : ''}</option>`;
+    unitSelect.innerHTML = `${original ? `<option value="original">${escapeText(meal.portion.label || 'Misura originale')}</option>` : ''}${meal.portion?.weightUnknown ? '' : `<option value="g">Grammi${meal.portion?.ingredientWeight ? ' di ingredienti' : ''}</option>`}`;
     unitSelect.value = original ? 'original' : 'g';
     unitSelect.dataset.previous = unitSelect.value;
     document.getElementById('edit-meal-quantity').value = original ? meal.quantity / meal.portion.gramsPerUnit : meal.quantity;
@@ -2408,11 +2453,7 @@ function processInitialMeals() {
 
 function recalculateDailyTotals() {
     dailyTotalsCache = {};
-    allMeals.forEach(meal => {
-        const dateKey = meal.jsDate.toISOString().split('T')[0];
-        dailyTotalsCache[dateKey] ??= emptyTotals();
-        addTotals(dailyTotalsCache[dateKey], mealNutrition(meal));
-    });
+    new Set(allMeals.map(meal => dayKey(meal.jsDate))).forEach(recalculateDay);
 }
 
 
@@ -2652,7 +2693,7 @@ function localSearch(term, onlyFoods = false) {
     const candidates = [...foods, ...recipes.map(recipe => ({ ...recipe, isRecipe: true })), ...recent, ...favoriteMeals.map(meal => ({ ...meal, isRecipe: false }))];
     const results = new Map();
     candidates.forEach(item => {
-        if (onlyFoods && (item.isRecipe || item.recipeId)) return;
+        if (onlyFoods && (item.isRecipe || item.recipeId || item.importedEstimate || item.portion?.weightUnknown)) return;
         const id = item.id || item.foodId || foodKey(item);
         if (!results.has(id)) results.set(id, { ...item, id });
     });
@@ -2759,7 +2800,8 @@ function updateMealPreview() {
     const previewContainer = document.getElementById('meal-preview');
     const quantity = portionPicker.quantity();
     document.getElementById('edit-estimate-btn').classList.toggle('hidden', isCustomMealMode || !selectedFood?.estimate);
-    document.getElementById('estimate-preview-detail').textContent = isCustomMealMode ? '' : selectedFood?.aiEstimate
+    document.getElementById('estimate-preview-detail').textContent = isCustomMealMode ? '' : selectedFood?.importedEstimate
+        ? `Stima da Gemini. ${selectedFood.importedEstimate.notes || ''}${selectedFood.importedEstimate.fibersKnown ? '' : ' Fibre non disponibili: non contribuiscono al totale.'}` : selectedFood?.aiEstimate
         ? `Stima da descrizione. ${selectedFood.aiEstimate.assumptions.join(' ')}`
         : selectedFood?.estimate ? `${estimateRange(selectedFood, quantity)}. ${estimateBreakdown(selectedFood, quantity)}` : '';
 
@@ -2781,7 +2823,8 @@ function updateMealPreview() {
     document.getElementById('preview-proteins').textContent = `${((foodData.proteins || 0) * ratio).toFixed(1)} g`;
     document.getElementById('preview-carbs').textContent = `${((foodData.carbs || 0) * ratio).toFixed(1)} g`;
     document.getElementById('preview-fats').textContent = `${((foodData.fats || 0) * ratio).toFixed(1)} g`;
-    document.getElementById('preview-fibers').textContent = `${((foodData.fibers || 0) * ratio).toFixed(1)} g`;
+    document.getElementById('preview-fibers').textContent = !isCustomMealMode && selectedFood?.importedEstimate?.fibersKnown === false
+        ? '—' : `${((foodData.fibers || 0) * ratio).toFixed(1)} g`;
 
     // Mostra/nascondi il bottone "Aggiungi ai preferiti" in base a se è già nei preferiti
     const addToFavoritesBtn = document.getElementById('add-to-favorites-btn');

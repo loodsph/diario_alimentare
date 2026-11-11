@@ -4,7 +4,7 @@
 // - Librerie da CDN (URL con versione fissa): cache-first.
 // - Firestore, Auth, Gemini, Open Food Facts: non intercettati.
 
-const CACHE = 'nutritrack-v5';
+const CACHE = 'nutritrack-v7';
 
 const APP_SHELL = [
     '/',
@@ -18,6 +18,8 @@ const APP_SHELL = [
     '/modules/aiPhotoAnalysis.js',
     '/modules/aiDishAnalysis.js',
     '/modules/dishEstimateEditor.js',
+    '/modules/geminiImport.js',
+    '/modules/geminiImportEditor.js',
     '/modules/charts.js',
     '/modules/foodSearch.js',
     '/modules/mealEntry.js',
@@ -28,6 +30,8 @@ const APP_SHELL = [
     '/modules/uiHelpers.js',
     '/modules/utils.js',
     '/modules/diary.js',
+    '/modules/dayPreset.js',
+    '/modules/dayPresetEditor.js',
     '/modules/sync.js',
     '/modules/lazy.js',
     '/modules/photo.js',

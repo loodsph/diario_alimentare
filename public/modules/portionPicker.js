@@ -1,5 +1,5 @@
-import { estimateLabel } from './mealEstimate.js?v=20261028';
-import { portionOptions, quantityInGrams, positive, formatAmount } from './portions.js?v=20261025';
+import { estimateLabel } from './mealEstimate.js?v=20261111';
+import { portionOptions, quantityInGrams, positive, formatAmount } from './portions.js?v=20261111';
 
 export function createPortionPicker(root, onChange) {
     const get = id => root.getElementById(id);
@@ -19,10 +19,11 @@ export function createPortionPicker(root, onChange) {
         const quantity = quantityInGrams(amount.value, unit);
         const minus = get('portion-minus');
         if (minus) minus.disabled = !positive(Number(amount.value)) || Number(amount.value) <= (unit.id === 'g' ? 10 : 0.25);
-        get('meal-quantity-label').textContent = unit.id === 'g' ? 'Quantità in grammi' : 'Quante unità?';
+        get('meal-quantity-label').textContent = unit.weightUnknown ? 'Quante porzioni descritte?' : unit.id === 'g' ? 'Quantità in grammi' : 'Quante unità?';
         const recipeWarning = food.isRecipe && !positive(food.finalWeight)
             ? ' Il peso cotto non è registrato: usa le porzioni o una frazione della ricetta.' : '';
-        hint.textContent = `${origin ? `${origin}. ` : ''}${unit.id === 'g'
+        hint.textContent = `${origin ? `${origin}. ` : ''}${unit.weightUnknown
+            ? '1 porzione = tutto il pasto descritto a Gemini. ½ = metà di quel pasto.' : unit.id === 'g'
             ? (positive(quantity) ? `${formatAmount(quantity)} g` : 'Inserisci il peso oppure definisci una tua misura.')
             : `1 unità = ${formatAmount(unit.grams)} g · ${unit.source}${positive(quantity) ? ` · Totale ${formatAmount(quantity)} g` : ''}`}${recipeWarning}${food.estimated ? ` ${estimateLabel(food)}, da verificare.` : ''}`;
         shortcuts.replaceChildren();
@@ -87,6 +88,7 @@ export function createPortionPicker(root, onChange) {
     }
 
     get('save-portion-unit').addEventListener('click', () => {
+        if (currentUnit().weightUnknown) return;
         const label = get('custom-portion-label').value.trim();
         const grams = Number(get('custom-portion-grams').value);
         const error = get('portion-unit-error');
@@ -114,11 +116,15 @@ export function createPortionPicker(root, onChange) {
             if (savedUnit && positive(saved.portion.amount)) {
                 select.value = savedUnit.id;
                 amount.value = saved.portion.amount;
-                origin = 'Porzione salvata';
+                origin = savedUnit.weightUnknown ? '' : 'Porzione salvata';
             } else if (positive(saved?.quantity)) {
-                select.value = 'g';
-                amount.value = saved.quantity;
+                select.value = options[0].id;
+                amount.value = saved.quantity / options[0].grams;
                 origin = foodData.estimated && !saved?.portion ? 'Quantità stimata da verificare' : 'Quantità salvata';
+            } else if (options[0].weightUnknown) {
+                select.value = options[0].id;
+                amount.value = 1;
+                origin = '';
             } else if (food.isRecipe || positive(food.servingGrams) || positive(food.packageGrams)) {
                 select.value = options.some(unit => unit.id === 'serving') ? 'serving' : 'package';
                 amount.value = 1;
@@ -129,6 +135,7 @@ export function createPortionPicker(root, onChange) {
                 origin = '';
             }
             get('portion-help').open = false;
+            get('portion-help').classList.toggle('hidden', Boolean(options[0].weightUnknown));
             get('custom-portion-label').value = customUnit?.label || '';
             get('custom-portion-grams').value = customUnit?.grams || '';
             get('portion-unit-error').textContent = '';
@@ -141,6 +148,7 @@ export function createPortionPicker(root, onChange) {
             const unit = currentUnit();
             return {
                 unitId: unit.id, label: unit.label, amount: Number(amount.value), gramsPerUnit: unit.grams, source: unit.source,
+                ...(unit.weightUnknown ? { weightUnknown: true } : {}),
                 ingredientWeight: Boolean(food.isRecipe && !positive(food.finalWeight))
             };
         }

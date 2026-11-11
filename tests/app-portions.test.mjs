@@ -6,6 +6,8 @@ import * as portions from '../public/modules/portions.js';
 import * as nutrition from '../public/modules/nutrition.js';
 import * as estimates from '../public/modules/mealEstimate.js';
 import * as diary from '../public/modules/diary.js';
+import * as dayPresets from '../public/modules/dayPreset.js';
+import { parseGeminiText, importedPortionToFood } from '../public/modules/geminiImport.js';
 import { createWriteTracker } from '../public/modules/sync.js';
 import * as foodSearch from '../public/modules/foodSearch.js';
 
@@ -16,11 +18,11 @@ function harness({ food = null, quantity = 100, custom = false, failWrite = fals
     const fields = new Map();
     const storage = new Map();
     const element = id => {
-        if (!fields.has(id)) fields.set(id, { value: '', checked: false, innerHTML: '', classList: { add() {}, remove() {}, toggle() {} }, replaceChildren() {}, focus() {}, scrollIntoView() {} });
+        if (!fields.has(id)) fields.set(id, { value: '', checked: false, innerHTML: '', dataset: {}, classList: { add() {}, remove() {}, toggle() {} }, replaceChildren() {}, focus() {}, scrollIntoView() {} });
         return fields.get(id);
     };
     const context = vm.createContext({
-        ...portions, ...estimates, ...nutrition, ...foodSearch, ...diary, createWriteTracker, console: { error() {} }, navigator: { onLine: true },
+        ...portions, ...estimates, ...nutrition, ...foodSearch, ...diary, ...dayPresets, createWriteTracker, console: { error() {} }, navigator: { onLine: true },
         window: { addEventListener() {} }, getTodayUTC: () => new Date('2026-10-20T12:00:00Z'),
         document: { getElementById: element, querySelectorAll: () => context.fixtureRows, querySelector: () => element('section-title') }, fixtureRows: [], fixtureFood: food, fixtureQuantity: quantity, fixtureCustom: custom,
         localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) },
@@ -54,6 +56,60 @@ function harness({ food = null, quantity = 100, custom = false, failWrite = fals
 }
 
 const recipe = { id: 'r1', name: 'Ricetta prova', isRecipe: true, servings: 4, totalWeight: 500, finalWeight: 1000, totalNutrition: { calories: 1200, proteins: 40, carbs: 160, fats: 44 } };
+
+test('Gemini import survives diary, favorite and portion edits without becoming grams', async () => {
+    const parsed = parseGeminiText('Nome: Pranzo\nP:25\nC:12\nG:2\nkal:166');
+    const food = importedPortionToFood(parsed, parsed.name);
+    const app = harness({ food, quantity: 50 });
+    app.run('portionPicker.metadata = () => ({ ...fixtureFood.portion, amount: 0.5 });');
+    await app.run('addMeal()');
+    await new Promise(resolve => setImmediate(resolve));
+    const meal = app.writes[0].data;
+    assert.equal(nutrition.mealNutrition(meal).calories, 83);
+    assert.equal(meal.portion.weightUnknown, true);
+    assert.equal(meal.importedEstimate.basis, 'portion');
+    await app.run('addToFavorites()');
+    assert.equal(app.writes[1].data.importedEstimate.basis, 'portion');
+    assert.equal(app.writes[1].data.portion.weightUnknown, true);
+    app.context.fixtureSavedMeal = meal;
+    app.run('allMeals = [{ ...fixtureSavedMeal, id: "imported" }]; openEditMealModal("imported");');
+    assert.doesNotMatch(app.element('edit-meal-unit').innerHTML, /value="g"/);
+    app.element('edit-meal-quantity').value = '0.25';
+    await app.run('saveMealChanges()');
+    const updated = app.writes.at(-1).data;
+    assert.equal(updated.quantity, 25);
+    assert.equal(updated.portion.weightUnknown, true);
+    assert.equal(nutrition.mealNutrition({ ...meal, ...updated }).calories, 41.5);
+    assert.equal(app.run('localSearch("pranzo", true).length'), 0);
+    assert.equal(app.run('localSearch("pranzo").length'), 1);
+});
+
+test('day presets use the captured date and stable document ID, and reject a changed account', async () => {
+    const app = harness();
+    app.run(`saveDayPreset(buildDayPreset(defaultDayPreset), { owner: userId, date: new Date('2026-09-10T12:00:00Z'), remember: true });`);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(app.writes[0].path.at(-1), 'day-preset-2026-09-10');
+    assert.equal(app.writes[0].data.date.toISOString(), '2026-09-10T12:00:00.000Z');
+    assert.equal(app.storage.size, 1);
+    app.run(`saveDayPreset(buildDayPreset({...defaultDayPreset, calories: 2800}), { owner: userId, date: new Date('2026-09-10T12:00:00Z') });`);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(app.writes[0].path, app.writes[1].path);
+    assert.throws(() => app.run(`saveDayPreset(buildDayPreset(defaultDayPreset), { owner: 'other-user', date: selectedDate });`));
+    assert.equal(app.writes.length, 2);
+});
+
+test('full and incremental diary recalculations agree for estimates, removal, and other dates', () => {
+    const app = harness();
+    app.run(`allMeals = [
+        { quantity: 100, calories: 500, jsDate: selectedDate },
+        { ...buildDayPreset(defaultDayPreset), jsDate: selectedDate },
+        { quantity: 100, calories: 800, jsDate: new Date('2026-10-19T12:00:00Z') }
+    ]; recalculateDailyTotals();`);
+    assert.equal(app.run(`dailyTotalsCache['2026-10-20'].calories`), 3000);
+    assert.equal(app.run(`dailyTotalsCache['2026-10-19'].calories`), 800);
+    app.run(`allMeals = allMeals.filter(meal => !isDayPreset(meal)); recalculateDay('2026-10-20');`);
+    assert.equal(app.run(`dailyTotalsCache['2026-10-20'].calories`), 500);
+});
 
 test('saving a recipe favorite stores normalized nutrients, amount and recipe identity', async () => {
     const app = harness({ food: recipe, quantity: 375 });

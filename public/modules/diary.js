@@ -1,4 +1,4 @@
-import { positive, nutritionPer100g } from './portions.js?v=20261025';
+import { positive, nutritionPer100g } from './portions.js?v=20261111';
 
 export const dayKey = date => date.toISOString().slice(0, 10);
 export function weekDates(date) {
@@ -13,6 +13,7 @@ export function calorieSeries(totals, date) {
 }
 export function editPortion(meal, amount, useOriginal = true) {
     const saved = meal.portion;
+    if (saved?.weightUnknown && !useOriginal) throw new Error('Questa stima si modifica in porzioni, non in grammi.');
     const original = useOriginal && saved && positive(saved.gramsPerUnit);
     const grams = original ? Number(saved.gramsPerUnit) : 1;
     if (!positive(amount) || !positive(Number(amount) * grams)) throw new Error('Inserisci una quantità maggiore di zero.');
@@ -29,6 +30,6 @@ export function mealTemplate(meal) {
         name: meal.name, ...nutritionPer100g({ ...meal, isRecipe: false }), quantity: Number(meal.quantity),
         portion: meal.portion || null, customUnit: meal.customUnit || null,
         foodId: meal.foodId || null, recipeId: meal.recipeId || null,
-        estimated: Boolean(meal.estimated), estimate: meal.estimate || null, aiEstimate: meal.aiEstimate || null, isCustom: Boolean(meal.isCustom)
+        estimated: Boolean(meal.estimated), estimate: meal.estimate || null, aiEstimate: meal.aiEstimate || null, importedEstimate: meal.importedEstimate || null, dayPreset: meal.dayPreset || null, isCustom: Boolean(meal.isCustom)
     };
 }

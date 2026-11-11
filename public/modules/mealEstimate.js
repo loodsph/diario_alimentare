@@ -64,7 +64,7 @@ export function buildMealEstimate(kind, rows) {
     };
 }
 export function estimateLabel(food) {
-    return food?.aiEstimate ? 'Stima da descrizione' : food?.estimate ? 'Stima in pezzi' : food?.estimated ? 'Stima da foto' : '';
+    return food?.importedEstimate ? 'Stima da Gemini' : food?.aiEstimate ? 'Stima da descrizione' : food?.estimate ? 'Stima in pezzi' : food?.estimated ? 'Stima da foto' : '';
 }
 export function estimateRange(food, quantity = food.quantity) {
     const range = food?.estimate?.rangePer100g;

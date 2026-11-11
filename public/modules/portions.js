@@ -1,4 +1,5 @@
-// Nutrition stays per 100 g; portion metadata records how the user chose that weight.
+// Normally nutrition is per 100 g. For weightless imported portions, 100 is only
+// the legacy accounting scale: weightUnknown forbids displaying/converting it as mass.
 export const nutrientKeys = ['calories', 'proteins', 'carbs', 'fats', 'fibers'];
 export const positive = value => Number.isFinite(Number(value)) && Number(value) > 0;
 export const formatAmount = value => Number(value).toLocaleString('it-IT', { maximumFractionDigits: 2 });
@@ -17,6 +18,7 @@ export function nutritionPer100g(food) {
 }
 
 export function foodKey(food) {
+    if (food.importedEstimate?.basis === 'portion') return `gemini:${food.name.trim().toLocaleLowerCase('it')}:${nutrientKeys.map(key => Number(food[key]) || 0).join(':')}`;
     if (food.isRecipe || food.recipeId) return `recipe:${food.recipeId || food.id}`;
     if (food.barcode) return `barcode:${food.barcode}`;
     if (food.foodId || food.id) return `food:${food.foodId || food.id}`;
@@ -24,6 +26,9 @@ export function foodKey(food) {
 }
 
 export function portionOptions(food = {}, customUnit = null) {
+    if (food.importedEstimate?.basis === 'portion' || food.portion?.weightUnknown) {
+        return [{ id: 'portion', label: 'Porzione descritta', grams: 100, weightUnknown: true, source: 'Valori della porzione descritta' }];
+    }
     const options = [{ id: 'g', label: 'Grammi', grams: 1, source: 'Peso inserito' }];
     if (food.isRecipe && positive(recipeWeight(food)) && positive(food.servings)) {
         const source = positive(food.finalWeight) ? 'Peso finale della ricetta' : 'Somma degli ingredienti, non peso cotto';
@@ -49,6 +54,7 @@ export function quantityInGrams(amount, unit) {
 
 export function portionDescription(portion) {
     if (!portion || !positive(portion.amount) || !positive(portion.gramsPerUnit)) return '';
+    if (portion.weightUnknown) return `${formatAmount(portion.amount)} × ${portion.label}`;
     if (portion.ingredientWeight) {
         return portion.unitId === 'g' ? `${formatAmount(portion.amount)} g di ingredienti`
             : `${formatAmount(portion.amount)} × ${portion.label} · peso cotto non registrato`;

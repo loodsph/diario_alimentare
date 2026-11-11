@@ -2,6 +2,30 @@
 
 Diario alimentare in italiano, con interfaccia JavaScript e salvataggio su Firebase.
 
+## Importare un pasto da Gemini, senza API
+
+In **Aggiungi qualcosa → Incolla da Gemini**, apri **Prima volta? Prepara il tuo Gem** e copia le istruzioni. Crea un Gem “NutriTrack” in Gemini e incollale nelle sue istruzioni; puoi anche usarle in una normale chat. Il testo è disponibile anche in [`docs/gemini-nutritrack.txt`](docs/gemini-nutritrack.txt). Riferimento per la creazione dei Gem: [guida ufficiale Google](https://support.google.com/gemini/answer/15146780?hl=it).
+
+Invia a Gemini una foto o una descrizione del pasto. Può chiedere dettagli su quantità mangiata, ingredienti e cottura. Il risultato descrive **tutta la porzione effettivamente mangiata**, non 100 g:
+
+```text
+Nome: Pollo con riso
+P: 25
+C: 12
+G: 2
+kcal: 166
+F: 1
+Note: Porzione mangiata, olio incluso.
+```
+
+Incolla il risultato, premi **Controlla i valori**, correggi eventualmente nome e nutrienti, poi **Usa questa porzione**. Scegli il tipo di pasto e conferma nel flusso consueto. **1** registra tutto il pasto descritto, **½** ne registra metà. P, C, G e kcal sono obbligatori; nome, fibre e note sono facoltativi nel testo (il nome va comunque compilato prima di proseguire). Sono accettati `kal`, spazi, maiuscole/minuscole, virgole decimali, unità g/kcal e un singolo blocco Markdown. Valori mancanti, negativi, non numerici, campi sconosciuti e duplicati impediscono l’importazione. Le fibre assenti restano indicate come non disponibili e non contribuiscono ai totali.
+
+L’importazione e i controlli sono locali e disponibili offline; foto e descrizioni si inviano direttamente a Gemini. Non servono chiavi API per questo percorso. Le integrazioni precedenti sono raccolte sotto **Analisi tramite API**. Il diario mostra **Stima da Gemini**, note e correzioni; recenti, preferiti, copie, pasti abituali e modifica mantengono l’origine e le frazioni. Queste stime non vengono proposte come ingredienti per 100 g nelle ricette.
+
+Dettaglio del formato salvato: `importedEstimate.basis = "portion"` e `portion.weightUnknown = true` distinguono le porzioni prive di peso. Per compatibilità con il moltiplicatore esistente `quantity / 100`, una porzione usa `quantity = 100` e `gramsPerUnit = 100` **solo come scala contabile, non come grammi reali**. L’interfaccia mostra esclusivamente porzioni e impedisce la conversione in grammi. I pasti precedenti non richiedono migrazioni. Il service worker v7 include i moduli di importazione e le istruzioni.
+
+`npm test` copre parsing, validazione, frazioni, memoria, salvataggio, modifica e preferiti. `python3 tests/ui-preview.py --serve` permette di provare l’intero flusso con dati locali, senza credenziali e senza chiamare Gemini.
+
 ## Inserire una porzione
 
 - Cerca un alimento o scansiona un prodotto. Scegli la misura e la quantità; non viene più proposto automaticamente un peso di 100 g.
@@ -53,6 +77,10 @@ scanner e analisi AI richiedono invece l’app configurata: l’anteprima serve 
 navigazione, ricerca degli esempi, porzioni e inserimento nel diario. Arrestare con Ctrl+C.
 
 ## Registrazione rapida e sincronizzazione
+
+Il pulsante **Giorno sgarro** nel diario apre una stima complessiva per la data selezionata: calorie, proteine, carboidrati, grassi e fibre sono modificabili. Il punto di partenza è un esempio (3000 kcal, 120 g proteine, 360 g carboidrati, 120 g grassi, 25 g fibre), non una raccomandazione o una stima automatica. È possibile ricordare i valori sul dispositivo, separatamente per account, dopo la conferma del salvataggio.
+
+Finché il preset è attivo, riepilogo, obiettivi, storico e grafici usano la stima giornaliera al posto della somma dei pasti. I pasti restano visibili e modificabili, ma non si sommano, neanche quelli aggiunti in seguito. **Modifica stima** aggiorna lo stesso documento; **Rimuovi stima** ripristina i totali dei pasti e offre **Annulla**. La distribuzione delle calorie per pasto non viene inventata per una stima complessiva. Il preset usa la stessa sincronizzazione offline dei pasti e un identificativo stabile per data; il service worker v6 include i nuovi moduli.
 
 - Ogni categoria del diario offre **Ripeti da ieri**, con scelta degli alimenti e quantità modificabili, e **Salva come abituale**. I pasti abituali sono privati, salvati su Firebase e disponibili in **La tua raccolta**. Le copie conservano valori nutrizionali e indicazione delle stime, con nuovi identificativi.
 - **Salva e aggiungi altro** registra l’alimento e riapre la ricerca, mantenendo data e tipo di pasto. **Aggiungi** nella categoria apre direttamente il flusso per quel pasto.

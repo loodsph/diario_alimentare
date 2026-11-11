@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
-<link href="style.css?v=20261028" rel="stylesheet"/>
+<link href="style.css?v=20261111" rel="stylesheet"/>
 </head>
 <body class="nutritrack">
 <div aria-live="assertive" class="offline-indicator" id="offline-indicator" role="alert">
@@ -64,8 +64,8 @@
 </button><button class="text-button" id="today-btn">
 <i class="fas fa-calendar-day"></i>
 <span>Oggi</span>
-</button></div><div class="date-caption"><h2 class="date-title" id="current-date-display"></h2><p class="muted" id="day-info"></p></div></div><main class="app-view" id="view-diary"><div class="nutrition-summary" id="nutrition-summary">
-<h3 class="text-3xl font-bold text-center mb-8 text-white">La giornata, finora</h3>
+</button></div><div class="date-caption"><h2 class="date-title" id="current-date-display"></h2><p class="muted" id="day-info"></p></div></div><main class="app-view" id="view-diary"><div class="day-preset-action"><button type="button" class="btn-modern btn-secondary" id="day-preset-btn">Giorno sgarro</button></div><div class="nutrition-summary" id="nutrition-summary">
+<h3 id="nutrition-summary-title" class="text-3xl font-bold text-center mb-8 text-white">La giornata, finora</h3>
 <p class="muted" id="diary-energy-goal"></p><progress aria-label="Calorie rispetto all’obiettivo" id="diary-energy-progress" max="100" value="0"></progress><div class="summary-values">
 <div class="text-center">
 <div aria-live="polite" class="summary-number" id="total-calories">0</div>
@@ -88,7 +88,7 @@
 <div class="text-white/80 font-medium">Fibre (g)</div>
 </div>
 </div>
-</div><div class="diary-columns"><div class="diary-meals" id="day-meals-container">
+</div><section id="day-preset-banner" class="day-preset-banner hidden" aria-label="Stima della giornata"><strong>Giorno sgarro · stima giornaliera</strong><p>I totali e i grafici usano questa stima. I pasti elencati sotto restano registrati ma non si sommano, anche se ne aggiungi altri. Rimuovi la stima per tornare ai totali dei pasti.</p><button type="button" id="edit-day-preset" class="text-button">Modifica stima</button><button type="button" id="remove-day-preset" class="text-button">Rimuovi stima</button></section><div class="diary-columns"><div class="diary-meals" id="day-meals-container">
 <h2 class="text-3xl font-bold mb-8 flex items-center gap-3">I pasti della giornata</h2>
 <p id="history-status" class="muted" role="status"></p><button id="retry-history" class="text-button hidden">Riprova caricamento</button><div aria-label="Pasti del giorno" class="meal-sections" id="selected-day-meals" role="region">
 </div>
@@ -197,7 +197,7 @@
 
                 Distribuzione Calorie Pasti
             </h3>
-<div class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner" id="meal-distribution-bar">
+<p id="meal-distribution-note" class="muted hidden">Giorno sgarro: la stima è per l’intera giornata, senza ripartizione per pasto.</p><div id="meal-distribution-content"><div class="flex h-6 rounded-lg overflow-hidden bg-slate-700 shadow-inner" id="meal-distribution-bar">
 <div class="meal-dist-bar bg-colazione transition-all duration-500" id="meal-dist-colazione"></div>
 <div class="meal-dist-bar bg-pranzo transition-all duration-500" id="meal-dist-pranzo"></div>
 <div class="meal-dist-bar bg-cena transition-all duration-500" id="meal-dist-cena"></div>
@@ -208,7 +208,7 @@
 <span><i class="fas fa-circle text-pranzo mr-1 text-[.6rem]"></i>Pranzo: <span id="meal-dist-pranzo-perc">0%</span></span>
 <span><i class="fas fa-circle text-cena mr-1 text-[.6rem]"></i>Cena: <span id="meal-dist-cena-perc">0%</span></span>
 <span><i class="fas fa-circle text-spuntino mr-1 text-[.6rem]"></i>Spuntino: <span id="meal-dist-spuntino-perc">0%</span></span>
-</div>
+</div></div>
 </div><div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
 <div class="chart-container">
 <h3 class="text-2xl font-bold mb-6 flex items-center gap-3">
@@ -416,7 +416,7 @@
 </div>
 </div>
 </div></main><div aria-label="Aggiungi un alimento" class="meal-editor hidden" id="add-meal-card"><div class="editor-navigation"><button class="text-button" id="close-meal-entry">← Torna al diario</button><p class="entry-steps"><span aria-current="step" id="step-food-label">1 Alimento</span><span aria-hidden="true"> / </span><span id="step-portion-label">2 Porzione</span></p></div>
-<p class="muted" id="entry-date"></p><div class="entry-content"><section id="entry-food"><p class="eyebrow">COMINCIAMO DA QUI</p><h2 tabindex="-1">Che cosa hai mangiato?</h2><p class="muted editor-description">Cerca un alimento, scegli un abituale o usa una foto.</p><div class="entry-search-label">
+<p class="muted" id="entry-date"></p><div class="entry-content"><section id="entry-food"><p class="eyebrow">COMINCIAMO DA QUI</p><h2 tabindex="-1">Che cosa hai mangiato?</h2><p class="muted editor-description">Cerca un alimento, scegli un abituale o incolla una stima da Gemini.</p><div class="entry-search-label">
 <label class="block text-sm font-semibold text-slate-300" for="food-search">Trova un alimento</label>
 <button class="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-2" id="toggle-custom-meal-btn">
 <i class="fas fa-pen-alt"></i>
@@ -436,9 +436,12 @@
 </div>
 <div class="search-results mt-2 max-h-60 overflow-y-auto absolute w-full hidden" id="search-results"></div>
 </div>
+<button class="btn-modern btn-secondary estimate-entry" id="gemini-import-btn" type="button">Incolla da Gemini <span>Foto o descrizione → valori della tua porzione</span></button>
+<details class="ai-api-options"><summary>Analisi tramite API</summary>
 <button aria-label="Analizza foto con AI" class="btn-modern btn-secondary photo-entry" id="ai-photo-btn" type="button">
 <i class="fas fa-camera"></i> Stima da una foto</button>
 <button class="btn-modern btn-secondary estimate-entry" id="describe-dish-btn" type="button">Descrivi un piatto <span>Ingredienti e cottura → stima per 100 g</span></button>
+</details>
 <button class="btn-modern btn-secondary estimate-entry" id="estimate-meal-btn" type="button">Grigliata o sushi? <span>Stima il pasto in pezzi →</span></button>
 </div>
 <div class="meal-form-section space-y-4 hidden" id="custom-meal-container">
@@ -506,7 +509,7 @@
                     </button><button class="btn-modern btn-secondary w-full mt-3" id="add-another-meal-btn" type="button">Salva e aggiungi altro</button><details class="mt-4" id="portion-help">
 <summary class="text-sm text-indigo-300 cursor-pointer">Usa fette, pezzi o vasetti</summary>
 <p class="text-sm text-slate-300 mt-3">Hai una confezione? Usa il peso netto in etichetta e la frazione che hai mangiato. Per una ricetta, scegli le porzioni o una parte della preparazione.</p>
-<p class="text-sm text-slate-400 mt-2">Per fette, pezzi, cucchiai o bicchieri, definisci una misura per questo alimento: ricava il peso dall’etichetta o pesala una volta. I ml non vengono convertiti automaticamente in grammi. Per un piatto senza riferimenti puoi usare la foto AI e verificare la stima.</p>
+<p class="text-sm text-slate-400 mt-2">Per fette, pezzi, cucchiai o bicchieri, definisci una misura per questo alimento: ricava il peso dall’etichetta o pesala una volta. I ml non vengono convertiti automaticamente in grammi. Per un piatto senza riferimenti puoi usare “Incolla da Gemini”.</p>
 <div class="portion-fields mt-3">
 <div>
 <label class="block text-sm text-slate-300 mb-2" for="custom-portion-label">La tua misura</label>
@@ -798,7 +801,7 @@
 <div id="meal-group-items" class="mt-4"></div><p id="meal-group-error" role="alert"></p>
 <div class="flex gap-3 mt-4"><button id="cancel-meal-group" class="btn-modern btn-secondary">Annulla</button><button id="save-meal-group" class="btn-modern btn-primary">Aggiungi al diario</button></div>
 </div></div>
-<script src="script.js?v=20261028" type="module"></script>
+<script src="script.js?v=20261111" type="module"></script>
 <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(err => console.error('Service worker non registrato:', err)));
